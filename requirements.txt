@@ -1,0 +1,25 @@
+# Arc-FaultNet Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core ML
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Metrics & ML utilities
+scikit-learn>=1.2.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# TensorBoard logging
+tensorboard>=2.12.0
+
+# Optional: for faster data loading
+# Install separately if needed:
+# pip install nvidia-dali-cuda120  # For NVIDIA GPU acceleration

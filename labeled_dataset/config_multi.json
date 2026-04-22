@@ -1,0 +1,24 @@
+{
+  "V_TH": 10.0,
+  "R_LOW": 0.05,
+  "R_HIGH": 0.95,
+  "FS": 1000000,
+  "F0": 50,
+  "SAMPLES_PER_CYCLE": 20000,
+  "n_channels": 3,
+  "channel_names": [
+    "V_ligne",
+    "V_arc",
+    "I"
+  ],
+  "n_samples": 913,
+  "n_label0": 627,
+  "n_label1": 286,
+  "n_excluded": 336,
+  "n_charges": 25,
+  "X_shape": [
+    913,
+    3,
+    20000
+  ]
+}

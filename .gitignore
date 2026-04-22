@@ -1,0 +1,73 @@
+# ════════════════════════════════════════════════════════
+#  Arc-FaultNet — .gitignore
+#  Exclut tout ce qui n'est pas nécessaire au training
+# ════════════════════════════════════════════════════════
+
+# ── Données brutes (CSV oscilloscope, ~2 Go) ────────────
+OthmaneSalim11032026/
+
+# ── Données prétraitées (NumPy arrays, lourds) ──────────
+labeled_dataset/*.npy
+labeled_dataset/*.csv
+# On garde uniquement les fichiers de config légers
+!labeled_dataset/charge_map.json
+!labeled_dataset/config.json
+!labeled_dataset/config_multi.json
+
+# ── Checkpoints et runs d'entraînement ──────────────────
+runs/
+*.pt
+*.pth
+*.onnx
+
+# ── Résultats d'ablation et exports générés ─────────────
+ablation_results/
+exports/
+
+# ── Environnement Python ─────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Jupyter Notebooks ────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Fichiers de présentation / documentation annexe ──────
+*.pptx
+*.html
+arc-faultnet-implementation.html
+attention-mechanisms-deep-dive.html
+html-prenstation.html
+mc-vsattn_cours.html
+project-status-deep-dive.html
+
+# PDFs (sauf architecture si tu veux les garder)
+*.pdf
+# Pour inclure un PDF spécifique : !figures/pipeline_flowchart.pdf
+
+# ── Fichiers système ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Node.js (vestige) ─────────────────────────────────────
+node_modules/
+package-lock.json
+
+# ── TensorBoard logs (générés pendant l'entraînement) ────
+runs/
+tensorboard_logs/
+
+# ── Fichiers temporaires ──────────────────────────────────
+*.tmp
+*.log

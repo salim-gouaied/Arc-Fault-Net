@@ -1,0 +1,17 @@
+{
+  "V_TH": 10.0,
+  "R_LOW": 0.35724103450775146,
+  "R_HIGH": 0.5531450510025024,
+  "FS": 1000000,
+  "F0": 50,
+  "SAMPLES_PER_CYCLE": 20000,
+  "HEADER_LINES": 5,
+  "n_experiments": 26,
+  "n_label0": 651,
+  "n_label1": 585,
+  "n_excluded": 13,
+  "X_shape": [
+    1236,
+    20000
+  ]
+}
