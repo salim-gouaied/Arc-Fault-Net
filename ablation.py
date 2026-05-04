@@ -452,8 +452,8 @@ def main():
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--gradient-clip', type=float, default=1.0)
     parser.add_argument('--use-pos-weight', action='store_true')
-    parser.add_argument('--data-dir', type=str, default='/home/top/PFE/labeled_dataset')
-    parser.add_argument('--output-dir', type=str, default='/home/top/PFE/ablation_results')
+    parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
+    parser.add_argument('--output-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/ablation_results')
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--cpu', action='store_true', help='Force CPU')
 

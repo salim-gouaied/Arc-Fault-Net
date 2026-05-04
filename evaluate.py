@@ -436,7 +436,7 @@ def main():
                         choices=['arcfaultnet', '1d_only', 'no_attention',
                                  'standard_conv', 'independent_cbam', 'baseline_cnn'],
                         help='Model architecture')
-    parser.add_argument('--data-dir', type=str, default='/home/top/PFE/labeled_dataset',
+    parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset',
                         help='Path to labeled dataset')
     parser.add_argument('--output-dir', type=str, default=None,
                         help='Output directory for visualizations')

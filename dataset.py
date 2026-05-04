@@ -35,7 +35,7 @@ class ArcFaultDataset(Dataset):
     
     def __init__(
         self,
-        data_dir: str = '/home/top/PFE/labeled_dataset',
+        data_dir: str = '/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset',
         n_fft: int = 512,
         hop_length: int = 256,
         compute_stft: bool = True,
@@ -58,15 +58,31 @@ class ArcFaultDataset(Dataset):
         # Load data
         self.X = np.load(self.data_dir / 'X_multi.npy')  # (N, 2, 20000) — [V_ligne, I]
         self.y = np.load(self.data_dir / 'y.npy')        # (N,)
-        self.charges = np.load(self.data_dir / 'charges.npy')  # (N,)
-        
-        # Load charge mapping
-        with open(self.data_dir / 'charge_map.json', 'r') as f:
-            self.charge_map = json.load(f)
         
         self.n_samples = len(self.y)
         self.n_channels = self.X.shape[1]
         self.seq_len = self.X.shape[2]
+        
+        # Load charges (optional — may not exist for new datasets)
+        charges_path = self.data_dir / 'charges.npy'
+        charge_map_path = self.data_dir / 'charge_map.json'
+        
+        if charges_path.exists() and charge_map_path.exists():
+            self.charges = np.load(charges_path)
+            # Check for size mismatch (stale file from a previous dataset)
+            if len(self.charges) != self.n_samples:
+                print(f"  WARNING: charges.npy size ({len(self.charges)}) != X size ({self.n_samples})")
+                print(f"           → Using dummy charges (single group). Use --mode single for training.")
+                self.charges = np.zeros(self.n_samples, dtype=np.int64)
+                self.charge_map = {'unknown': 0}
+            else:
+                with open(charge_map_path, 'r') as f:
+                    self.charge_map = json.load(f)
+        else:
+            print(f"  INFO: No charges.npy found — using dummy charges (single group)")
+            self.charges = np.zeros(self.n_samples, dtype=np.int64)
+            self.charge_map = {'unknown': 0}
+        
         self.n_charges = len(self.charge_map)
         
         # Precompute STFT window
@@ -283,10 +299,10 @@ if __name__ == '__main__':
     print("Testing ArcFaultDataset...")
     
     # Check if data exists
-    data_dir = Path('/home/top/PFE/labeled_dataset')
+    data_dir = Path('/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
     if not (data_dir / 'X_multi.npy').exists():
         print(f"\nData not found at {data_dir}")
-        print("Run: python step2_build_multichannel.py")
+        print("Run: python scripts/step2_build_multichannel.py")
         exit(1)
     
     # Load dataset

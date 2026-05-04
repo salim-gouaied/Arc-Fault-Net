@@ -611,8 +611,8 @@ def main():
                         help='Classification threshold for sigmoid output')
     parser.add_argument('--use-pos-weight', action='store_true',
                         help='Use pos_weight in BCEWithLogitsLoss for class imbalance')
-    parser.add_argument('--data-dir', type=str, default='/home/top/PFE/labeled_dataset')
-    parser.add_argument('--output-dir', type=str, default='/home/top/PFE/runs')
+    parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
+    parser.add_argument('--output-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs')
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true', help='Force CPU training')

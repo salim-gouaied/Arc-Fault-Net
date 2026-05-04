@@ -32,8 +32,8 @@ warnings.filterwarnings('ignore')
 # ─────────────────────────────────────────────────────
 #  CONFIGURATION — edit these if needed
 # ─────────────────────────────────────────────────────
-DATA_DIR   = Path('/home/top/PFE/OthmaneSalim11032026')
-OUTPUT_DIR = Path('/home/top/PFE/labeled_dataset')
+DATA_DIR   = Path('/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/OthmaneSalim11032026')
+OUTPUT_DIR = Path('/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
 
 FS                 = 1_000_000   # Sampling rate (Hz)
 F0                 = 50          # Mains frequency (Hz)

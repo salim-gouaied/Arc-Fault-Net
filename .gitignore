@@ -5,7 +5,9 @@
 
 # ── Données brutes (CSV oscilloscope, ~2 Go) ────────────
 OthmaneSalim11032026/
-
+data/
+data/OthmaneSalim11032026/
+data/Dataset
 # ── Données prétraitées (NumPy arrays, lourds) ──────────
 labeled_dataset/*.npy
 labeled_dataset/*.csv
