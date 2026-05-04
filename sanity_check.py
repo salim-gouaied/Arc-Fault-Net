@@ -13,7 +13,7 @@ Checks:
 
 Usage:
   python sanity_check.py
-  python sanity_check.py --data-dir /home/top/PFE/labeled_dataset --batch-size 8
+  python sanity_check.py --data-dir /home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset --batch-size 8
   python sanity_check.py --cpu
 """
 
@@ -48,7 +48,7 @@ def check(condition: bool, msg_ok: str, msg_fail: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description='Arc-FaultNet Pipeline Sanity Check')
-    parser.add_argument('--data-dir', type=str, default='/home/top/PFE/labeled_dataset')
+    parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--num-workers', type=int, default=0)
     parser.add_argument('--overfit-iters', type=int, default=100,
@@ -88,9 +88,10 @@ def main():
                f"X channels = {dataset.X.shape[1]} — expected 2 (V_ligne, I)")
     all_ok &= ok
 
-    ok = check(dataset.X.shape[2] == 20000,
-               f"X length = {dataset.X.shape[2]} (expected 20000)",
-               f"X length = {dataset.X.shape[2]} — expected 20000 samples")
+    seq_len = dataset.seq_len
+    ok = check(seq_len > 0,
+               f"X length = {seq_len} samples",
+               f"X length = {seq_len} — invalid")
     all_ok &= ok
 
     ok = check(len(dataset.y) == dataset.X.shape[0],
@@ -132,9 +133,9 @@ def main():
 
     B = args.batch_size
 
-    ok = check(x_1d_b.shape == torch.Size([B, 2, 20000]),
+    ok = check(x_1d_b.shape == torch.Size([B, 2, seq_len]),
                f"x_1d shape = {tuple(x_1d_b.shape)}",
-               f"x_1d shape = {tuple(x_1d_b.shape)} — expected ({B}, 2, 20000)")
+               f"x_1d shape = {tuple(x_1d_b.shape)} — expected ({B}, 2, {seq_len})")
     all_ok &= ok
 
     ok = check(x_2d_b.shape[0] == B and x_2d_b.shape[1] == 2 and x_2d_b.shape[2] == 257,

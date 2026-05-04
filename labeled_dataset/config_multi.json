@@ -5,20 +5,24 @@
   "FS": 1000000,
   "F0": 50,
   "SAMPLES_PER_CYCLE": 20000,
-  "n_channels": 3,
+  "n_channels": 2,
   "channel_names": [
     "V_ligne",
-    "V_arc",
     "I"
   ],
-  "n_samples": 913,
-  "n_label0": 627,
-  "n_label1": 286,
-  "n_excluded": 336,
-  "n_charges": 25,
+  "n_samples": 9386,
+  "n_label0": 4991,
+  "n_label1": 4395,
+  "n_excluded": 1115,
+  "n_errors": 0,
+  "source_dirs": [
+    "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/DataSet/8_juillet_clean",
+    "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/DataSet/15_juillet_clean",
+    "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/DataSet/22_juillet_clean"
+  ],
   "X_shape": [
-    913,
-    3,
+    9386,
+    2,
     20000
   ]
 }
