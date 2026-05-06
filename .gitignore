@@ -17,12 +17,10 @@ labeled_dataset/*.csv
 !labeled_dataset/config_multi.json
 
 # ── Checkpoints et runs d'entraînement ──────────────────
-runs/
+runs/*
 !runs/arcfaultnet_single_20260504_114636/
+runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260504_114636/eval/
-runs/arcfaultnet_single_20260504_114636/*.pt
-runs/arcfaultnet_single_20260504_114636/*.json
-runs/arcfaultnet_single_20260504_114636/tensorboard/
 *.pt
 *.pth
 *.onnx

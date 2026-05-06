@@ -1,0 +1,4 @@
+source_dir,exp_id,count,mean_prob,min_prob,max_prob
+22_juillet_clean,exp13--IJL--LR,224,0.9972613799784865,0.5811502933502197,1.0
+15_juillet_clean,exp12--IJL--LR,181,0.9992462380156333,0.8682404160499573,1.0
+8_juillet_clean,exp11--IJL--LR,166,0.9998064094997314,0.9843921661376953,1.0
