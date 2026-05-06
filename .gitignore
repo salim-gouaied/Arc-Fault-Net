@@ -21,7 +21,7 @@ runs/
 *.pt
 *.pth
 *.onnx
-
+!runs/arcfaultnet_single_20260504_114636/eval/
 # ── Résultats d'ablation et exports générés ─────────────
 ablation_results/
 exports/
@@ -72,4 +72,4 @@ tensorboard_logs/
 
 # ── Fichiers temporaires ──────────────────────────────────
 *.tmp
-*.log
+
