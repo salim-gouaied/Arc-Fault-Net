@@ -17,11 +17,11 @@ labeled_dataset/*.csv
 !labeled_dataset/config_multi.json
 
 # ── Checkpoints et runs d'entraînement ──────────────────
-runs/
-*.pt
-*.pth
-*.onnx
-!runs/arcfaultnet_single_20260504_114636/eval/
+#runs/
+#*.pt
+#*.pth
+#*.onnx
+#!runs/arcfaultnet_single_20260504_114636/
 # ── Résultats d'ablation et exports générés ─────────────
 ablation_results/
 exports/
