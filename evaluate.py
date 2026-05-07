@@ -611,9 +611,10 @@ def analyse_false_positives(
     labels: np.ndarray,
     metadata: pd.DataFrame,
     output_dir: Path,
-    threshold: float = 0.5
+    threshold: float = 0.5,
+    n_plot: int = 16
 ):
-    """Quick CSV report for false positives."""
+    """CSV report + signal plots for false positives (normal predicted as arc)."""
     preds = (probs > threshold).astype(int)
     fp_mask = (labels == 0) & (preds == 1)
     fp_local = np.where(fp_mask)[0]
@@ -641,6 +642,47 @@ def analyse_false_positives(
     fp_df = pd.DataFrame(rows).sort_values('prob', ascending=False)
     fp_df.to_csv(output_dir / 'false_positives.csv', index=False)
     print(f"  Saved → false_positives.csv ({len(fp_df)} rows)")
+
+    # ── Signal plots for most-confident FPs ──────────────────────
+    n_plot = min(n_plot, len(fp_df))
+    worst_fp = fp_df.head(n_plot)   # highest prob = most confidently wrong
+
+    channel_names = ['V_ligne', 'I(t)']
+
+    for page_start in range(0, n_plot, 4):
+        page_end = min(page_start + 4, n_plot)
+        n_this = page_end - page_start
+        fig, axes = plt.subplots(n_this, 2, figsize=(14, 3.5 * n_this))
+        if n_this == 1:
+            axes = axes.reshape(1, -1)
+
+        for row_i, (_, fp_row) in enumerate(worst_fp.iloc[page_start:page_end].iterrows()):
+            idx = int(fp_row['dataset_index'])
+            x_1d, _, label, _ = dataset[idx]
+
+            for c in range(2):
+                ax = axes[row_i, c]
+                signal = x_1d[c].numpy()
+                ax.plot(signal, linewidth=0.5, color='darkorange')
+                ax.set_title(f"{channel_names[c]}", fontsize=10)
+                ax.set_xlim([0, len(signal)])
+
+                if c == 0:
+                    ax.set_ylabel(
+                        f"idx={idx}  p={fp_row['prob']:.3f}\n"
+                        f"{fp_row['source_dir']}\n"
+                        f"{fp_row['exp_id']} / file {fp_row['file_num']}",
+                        fontsize=8, color='darkorange'
+                    )
+
+        fig.suptitle(f"False Positives (normal predicted as arc) — "
+                     f"page {page_start//4 + 1}", fontsize=12, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(output_dir / f'fp_signals_page{page_start//4 + 1}.png',
+                    dpi=150, bbox_inches='tight')
+        plt.close()
+
+    print(f"  Saved → fp_signals_page*.png ({n_plot} signals plotted)")
 
 
 # ═══════════════════════════════════════════════════════
