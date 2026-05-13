@@ -62,7 +62,7 @@ def train_one_epoch(
     optimizer: optim.Optimizer,
     device: torch.device,
     epoch: int,
-    gradient_clip: float = 1.0
+    gradient_clip: float = 0.5
 ) -> Dict[str, float]:
     """Train for one epoch."""
     model.train()
@@ -76,6 +76,24 @@ def train_one_epoch(
         x_1d   = x_1d.to(device)
         x_2d   = x_2d.to(device)
         labels = labels.to(device)
+
+        # ── Binary label smoothing (training only) ────────────────
+        # 0 → 0.05, 1 → 0.95  — reduces overconfidence
+        labels = labels * 0.9 + 0.05
+
+        # ── Light signal augmentation (training only) ─────────────
+        # Amplitude scaling [0.95, 1.05] + very small Gaussian noise
+        amp_scale = 0.95 + 0.1 * torch.rand(x_1d.size(0), 1, 1, device=device)
+        x_1d = x_1d * amp_scale
+        x_1d = x_1d + 0.001 * torch.randn_like(x_1d)
+
+        # ── Light spectrogram augmentation (training only) ────────
+        # Frequency masking: zero out 1-3 frequency bins
+        mask_width = torch.randint(1, 4, (1,)).item()
+        max_start = x_2d.size(2) - mask_width
+        if max_start > 0:
+            mask_start = torch.randint(0, max_start, (1,)).item()
+            x_2d[:, :, mask_start:mask_start + mask_width, :] = 0
 
         optimizer.zero_grad()
 
@@ -185,11 +203,11 @@ def train_model(
     train_loader: DataLoader,
     val_loader: DataLoader,
     device: torch.device,
-    epochs: int = 200,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-4,
-    patience: int = 20,
-    gradient_clip: float = 1.0,
+    epochs: int = 80,
+    lr: float = 3e-4,
+    weight_decay: float = 5e-4,
+    patience: int = 10,
+    gradient_clip: float = 0.5,
     threshold: float = 0.5,
     pos_weight: Optional[torch.Tensor] = None,
     checkpoint_dir: Optional[Path] = None,
@@ -300,12 +318,12 @@ def run_leave_one_charge_out_cv(
     model_name: str,
     dataset: ArcFaultDataset,
     device: torch.device,
-    epochs: int = 200,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-4,
+    epochs: int = 80,
+    lr: float = 3e-4,
+    weight_decay: float = 5e-4,
     batch_size: int = 64,
-    patience: int = 20,
-    gradient_clip: float = 1.0,
+    patience: int = 10,
+    gradient_clip: float = 0.5,
     threshold: float = 0.5,
     use_pos_weight: bool = False,
     output_dir: Path = Path('runs'),
@@ -476,12 +494,12 @@ def run_single_training(
     device: torch.device,
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
-    epochs: int = 200,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-4,
+    epochs: int = 80,
+    lr: float = 3e-4,
+    weight_decay: float = 5e-4,
     batch_size: int = 64,
-    patience: int = 20,
-    gradient_clip: float = 1.0,
+    patience: int = 10,
+    gradient_clip: float = 0.5,
     threshold: float = 0.5,
     use_pos_weight: bool = False,
     output_dir: Path = Path('runs'),
@@ -600,12 +618,12 @@ def main():
                         help='cv = leave-one-charge-out | single = random split')
     parser.add_argument('--fold', type=int, default=None,
                         help='(cv mode) Run only this fold index (0-based)')
-    parser.add_argument('--epochs', type=int, default=200)
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--weight-decay', type=float, default=1e-4)
+    parser.add_argument('--epochs', type=int, default=80)
+    parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--weight-decay', type=float, default=5e-4)
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--patience', type=int, default=20)
-    parser.add_argument('--gradient-clip', type=float, default=1.0,
+    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--gradient-clip', type=float, default=0.5,
                         help='Max gradient norm (0 = disabled)')
     parser.add_argument('--threshold', type=float, default=0.5,
                         help='Classification threshold for sigmoid output')

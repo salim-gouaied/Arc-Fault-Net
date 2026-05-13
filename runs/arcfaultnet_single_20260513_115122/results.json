@@ -1,0 +1,19 @@
+{
+  "model_name": "arcfaultnet",
+  "seed": 42,
+  "n_params": 85073,
+  "timestamp": "20260513_115122",
+  "epochs": 80,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "batch_size": 64,
+  "patience": 10,
+  "gradient_clip": 0.5,
+  "threshold": 0.5,
+  "best_epoch": 25,
+  "test_accuracy": 0.8914123491838183,
+  "test_f1": 0.8816705286387706,
+  "test_precision": 0.9223300970724542,
+  "test_recall": 0.8444444444319341,
+  "test_specificity": 0.9346049046194196
+}

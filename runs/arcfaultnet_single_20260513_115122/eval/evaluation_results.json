@@ -1,0 +1,30 @@
+{
+  "model_name": "arcfaultnet",
+  "model_path": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs/arcfaultnet_single_20260513_115122/best_single.pt",
+  "seed": 42,
+  "n_test": 1409,
+  "threshold": 0.5,
+  "overall_metrics": {
+    "accuracy": 0.8914123491774918,
+    "precision": 0.9223300970724542,
+    "recall": 0.8444444444319341,
+    "f1": 0.8816705286387706,
+    "specificity": 0.9346049046194196,
+    "auc_roc": 0.9548531637904935,
+    "average_precision": 0.9621773645015362,
+    "tp": 570,
+    "fp": 48,
+    "fn": 105,
+    "tn": 686,
+    "confusion_matrix": [
+      [
+        686,
+        48
+      ],
+      [
+        105,
+        570
+      ]
+    ]
+  }
+}
