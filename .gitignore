@@ -21,6 +21,7 @@ runs/*
 !runs/arcfaultnet_single_20260504_114636/
 runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260504_114636/eval/
+!runs/arcfaultnet_single_20260513_115122/
 *.pt
 *.pth
 *.onnx
