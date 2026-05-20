@@ -1068,6 +1068,176 @@ def plot_per_experiment_metrics(test_indices, labels, probs, metadata, output_di
 
 
 # ═══════════════════════════════════════════════════════
+#  V_ARC VERIFICATION PLOTS  (I(t) + C2 from raw CSV)
+# ═══════════════════════════════════════════════════════
+
+DATA_ROOT = Path('/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/DataSet')
+HEADER_LINES = 5   # LeCroy CSV header lines to skip
+
+
+def _load_c2_segment(source_dir: str, exp_id: str, file_num: str,
+                     start_sample: int, end_sample: int) -> Optional[np.ndarray]:
+    """
+    Load the V_arc (C2) segment from the original LeCroy CSV.
+
+    Returns the raw amplitude array for the alternance [start_sample:end_sample],
+    or None if the file cannot be found / read.
+    """
+    try:
+        fnum = int(file_num)
+        file_num_str = f"{fnum:05d}"
+    except ValueError:
+        file_num_str = str(file_num)
+
+    csv_name = f"C2--{exp_id}--{file_num_str}.csv"
+    csv_path = DATA_ROOT / source_dir / csv_name
+
+    if not csv_path.exists():
+        print(f"    ⚠ C2 file not found: {csv_path}")
+        return None
+
+    try:
+        data = pd.read_csv(
+            csv_path,
+            skiprows=HEADER_LINES,
+            header=0,
+            names=['Time', 'Ampl'],
+            dtype={'Ampl': np.float32},
+            usecols=['Ampl'],
+            engine='c'
+        )
+        ampl = data['Ampl'].values
+        return ampl[start_sample:end_sample]
+    except Exception as e:
+        print(f"    ⚠ Error reading {csv_path}: {e}")
+        return None
+
+
+def plot_varc_verification(
+    dataset: 'ArcFaultDataset',
+    test_indices: np.ndarray,
+    probs: np.ndarray,
+    labels: np.ndarray,
+    metadata: pd.DataFrame,
+    output_dir: Path,
+    threshold: float = 0.5
+):
+    """
+    Generate 4 verification PNGs (one per category: TP, FP, FN, TN)
+    showing the I(t) signal from the dataset alongside the raw V_arc
+    (C2) loaded from the original CSV files.
+
+    Purpose: visually verify whether the alternance labeling is correct
+    by comparing the current waveform with the arc voltage oracle.
+    """
+    preds = (probs > threshold).astype(int)
+
+    # Classify every test sample
+    categories = {
+        'TP': (labels == 1) & (preds == 1),
+        'FP': (labels == 0) & (preds == 1),
+        'FN': (labels == 1) & (preds == 0),
+        'TN': (labels == 0) & (preds == 0),
+    }
+
+    cat_colors = {
+        'TP': ('forestgreen',  'Arc correctly predicted as arc'),
+        'FP': ('darkorange',   'Normal incorrectly predicted as arc'),
+        'FN': ('red',          'Arc incorrectly predicted as normal'),
+        'TN': ('steelblue',    'Normal correctly predicted as normal'),
+    }
+
+    print(f"\n  Generating V_arc verification plots ...")
+
+    for cat_name, mask in categories.items():
+        local_indices = np.where(mask)[0]
+        if len(local_indices) == 0:
+            print(f"    {cat_name}: no samples — skipping.")
+            continue
+
+        # Pick the most confident samples for this category (up to 4)
+        if cat_name in ('TP', 'FP'):   # high prob = most confident
+            sorted_local = local_indices[np.argsort(probs[local_indices])[::-1]]
+        else:                           # FN, TN: low prob = most confident
+            sorted_local = local_indices[np.argsort(probs[local_indices])]
+
+        picks = sorted_local[:4]
+        n_picks = len(picks)
+
+        color, description = cat_colors[cat_name]
+
+        # ── Plot: n_picks rows, 2 columns (I(t) | V_arc) ───────────────
+        fig, axes = plt.subplots(n_picks, 2, figsize=(16, 4.5 * n_picks))
+        if n_picks == 1:
+            axes = axes.reshape(1, 2)
+        fig.patch.set_facecolor('#fafafa')
+
+        for i, pick in enumerate(picks):
+            global_idx = test_indices[pick]
+            meta_row = metadata.iloc[global_idx]
+
+            source_dir   = str(meta_row.get('source_dir', ''))
+            exp_id       = str(meta_row.get('exp_id', ''))
+            file_num     = str(meta_row.get('file_num', ''))
+            start_sample = int(meta_row.get('start_sample', 0))
+            end_sample   = int(meta_row.get('end_sample', 0))
+            arc_ratio    = meta_row.get('arc_ratio', '')
+            prob_val     = float(probs[pick])
+
+            # Get I(t) from the dataset (channel 1)
+            x_1d, _, label_val, _ = dataset[global_idx]
+            i_signal = x_1d[1].numpy()   # channel 1 = I(t)
+
+            # Load V_arc from C2 CSV
+            varc_raw = _load_c2_segment(source_dir, exp_id, file_num,
+                                        start_sample, end_sample)
+
+            ax1 = axes[i, 0]
+            ax2 = axes[i, 1]
+
+            # Left: I(t) — normalised signal from dataset
+            ax1.plot(i_signal, linewidth=0.6, color=color)
+            ax1.set_title(f'Sample {i+1} : I(t)  — normalised', fontsize=12, fontweight='bold')
+            ax1.set_xlabel('Sample')
+            ax1.set_ylabel(
+                f"Amplitude (z-score)\n\n"
+                f"idx={global_idx}  p={prob_val:.3f}  label={int(label_val.item())}\n"
+                f"ratio={arc_ratio}\n"
+                f"{source_dir} / {exp_id} / file {file_num}\n"
+                f"samples: {start_sample} -> {end_sample}",
+                fontsize=9
+            )
+            ax1.set_xlim([0, len(i_signal)])
+            ax1.grid(True, alpha=0.3, linestyle='--')
+
+            # Right: V_arc (C2) — raw voltage
+            if varc_raw is not None:
+                ax2.plot(varc_raw, linewidth=0.6, color='purple')
+                ax2.set_xlim([0, len(varc_raw)])
+            else:
+                ax2.text(0.5, 0.5, 'C2 File Not Found', ha='center', va='center')
+            
+            ax2.set_title(f'Sample {i+1} : V_arc (C2)  — raw voltage', fontsize=12, fontweight='bold')
+            ax2.set_xlabel('Sample')
+            ax2.set_ylabel('Voltage (V)')
+            ax2.grid(True, alpha=0.3, linestyle='--')
+
+        # Overall title with metadata
+        fig.suptitle(
+            f"{cat_name} — {description} (Top {n_picks} most confident)",
+            fontsize=14, fontweight='bold', y=1.02 if n_picks <= 2 else 1.01
+        )
+
+        plt.tight_layout()
+        out_path = output_dir / f'varc_verification_{cat_name.lower()}.png'
+        plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='#fafafa')
+        plt.close()
+        print(f"    Saved → {out_path.name}")
+
+    print(f"  V_arc verification plots complete.")
+
+
+# ═══════════════════════════════════════════════════════
 #  MAIN EVALUATION
 # ═══════════════════════════════════════════════════════
 
@@ -1131,41 +1301,47 @@ def evaluate_model(
     output_dir.mkdir(parents=True, exist_ok=True)
     preds = (probs > threshold).astype(int)
 
-    plot_confusion_matrix(labels, preds, output_dir / 'confusion_matrix.png')
-    plot_roc_curve(labels, probs, output_dir / 'roc_curve.png')
-    plot_precision_recall_curve(labels, probs, output_dir / 'pr_curve.png')
+    # plot_confusion_matrix(labels, preds, output_dir / 'confusion_matrix.png')
+    # plot_roc_curve(labels, probs, output_dir / 'roc_curve.png')
+    # plot_precision_recall_curve(labels, probs, output_dir / 'pr_curve.png')
 
     # ── Training curves (if history file exists) ─────────────────
     history_path = Path(model_path).parent / 'history_single.json'
     if not history_path.exists():
         history_path = Path(model_path).parent / 'history.json'
-    if history_path.exists():
-        print(f"\n  Plotting training curves from {history_path.name} ...")
-        plot_training_curves(history_path, output_dir)
-    else:
-        print(f"  ⚠ No training history found, skipping training curves.")
+    # if history_path.exists():
+    #     print(f"\n  Plotting training curves from {history_path.name} ...")
+    #     plot_training_curves(history_path, output_dir)
+    # else:
+    #     print(f"  ⚠ No training history found, skipping training curves.")
 
     # ── False-negative / false-positive analysis ─────────────────
-    analyse_false_negatives(
-        dataset, test_indices, probs, labels, metadata,
-        output_dir, threshold, n_plot=16
-    )
-    analyse_false_positives(
+    # analyse_false_negatives(
+    #     dataset, test_indices, probs, labels, metadata,
+    #     output_dir, threshold, n_plot=16
+    # )
+    # analyse_false_positives(
+    #     dataset, test_indices, probs, labels, metadata,
+    #     output_dir, threshold
+    # )
+    # analyse_true_positives(
+    #     dataset, test_indices, probs, labels, metadata,
+    #     output_dir, threshold, n_plot=16
+    # )
+
+    # ── V_arc verification plots (I(t) + C2 from raw CSV) ────────
+    plot_varc_verification(
         dataset, test_indices, probs, labels, metadata,
         output_dir, threshold
-    )
-    analyse_true_positives(
-        dataset, test_indices, probs, labels, metadata,
-        output_dir, threshold, n_plot=16
     )
 
     # ── Advanced analysis plots ──────────────────────────────────
     print(f"\n  Generating advanced analysis plots ...")
-    plot_score_distribution(labels, probs, output_dir, threshold)
-    plot_threshold_analysis(labels, probs, output_dir)
-    plot_calibration_curve(labels, probs, output_dir)
-    plot_confidence_distribution(labels, probs, output_dir, threshold)
-    plot_per_experiment_metrics(test_indices, labels, probs, metadata, output_dir, threshold)
+    # plot_score_distribution(labels, probs, output_dir, threshold)
+    # plot_threshold_analysis(labels, probs, output_dir)
+    # plot_calibration_curve(labels, probs, output_dir)
+    # plot_confidence_distribution(labels, probs, output_dir, threshold)
+    # plot_per_experiment_metrics(test_indices, labels, probs, metadata, output_dir, threshold)
 
     # ── Save metrics JSON ────────────────────────────────────────
     results = {

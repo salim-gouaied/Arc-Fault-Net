@@ -1,6 +1,6 @@
 {
   "model_name": "arcfaultnet",
-  "model_path": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs/arcfaultnet_single_20260513_115122/best_single.pt",
+  "model_path": "runs/arcfaultnet_single_20260513_115122/best_single.pt",
   "seed": 42,
   "n_test": 1409,
   "threshold": 0.5,

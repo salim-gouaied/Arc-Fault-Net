@@ -1,0 +1,26 @@
+{
+  "dataset": "OthmaneSalim10052026",
+  "V_TH": 10.0,
+  "R_LOW": 0.05,
+  "R_HIGH": 0.95,
+  "FS": 1000000,
+  "F0": 50,
+  "SAMPLES_PER_CYCLE": 20000,
+  "n_channels": 2,
+  "channel_names": [
+    "V_ligne (C1)",
+    "I (C3)"
+  ],
+  "n_samples": 1842,
+  "n_label0": 1152,
+  "n_label1": 690,
+  "n_excluded": 74,
+  "n_errors": 0,
+  "X_shape": [
+    1842,
+    2,
+    20000
+  ],
+  "data_dir": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/data/OthmaneSalim10052026",
+  "output_dir": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/TestModel/prepared_data"
+}
