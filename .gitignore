@@ -12,7 +12,8 @@ data/Dataset
 # ── Données prétraitées (NumPy arrays, lourds) ──────────
 labeled_dataset/*.npy
 labeled_dataset/*.csv
-TestModel/prepared_data/*.npy
+TestModel/prepared_data/X_multi.npy
+TestModel/prepared_data/y.npy
 # On garde uniquement les fichiers de config légers
 !labeled_dataset/charge_map.json
 !labeled_dataset/config.json
