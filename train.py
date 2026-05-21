@@ -62,10 +62,14 @@ def train_one_epoch(
     optimizer: optim.Optimizer,
     device: torch.device,
     epoch: int,
-    gradient_clip: float = 0.5
+    gradient_clip: float = 0.5,
+    label_smoothing: float = 0.05
 ) -> Dict[str, float]:
-    """Train for one epoch."""
+    """Train for one epoch with label smoothing."""
     model.train()
+    # Enable augmentation on the underlying dataset
+    if hasattr(loader.dataset, 'dataset'):
+        loader.dataset.dataset.training = True
 
     total_loss = 0.0
     correct = 0
@@ -77,28 +81,13 @@ def train_one_epoch(
         x_2d   = x_2d.to(device)
         labels = labels.to(device)
 
-        # ── Binary label smoothing (training only) ────────────────
-        # 0 → 0.05, 1 → 0.95  — reduces overconfidence
-        labels = labels * 0.9 + 0.05
-
-        # ── Light signal augmentation (training only) ─────────────
-        # Amplitude scaling [0.95, 1.05] + very small Gaussian noise
-        amp_scale = 0.95 + 0.1 * torch.rand(x_1d.size(0), 1, 1, device=device)
-        x_1d = x_1d * amp_scale
-        x_1d = x_1d + 0.001 * torch.randn_like(x_1d)
-
-        # ── Light spectrogram augmentation (training only) ────────
-        # Frequency masking: zero out 1-3 frequency bins
-        mask_width = torch.randint(1, 4, (1,)).item()
-        max_start = x_2d.size(2) - mask_width
-        if max_start > 0:
-            mask_start = torch.randint(0, max_start, (1,)).item()
-            x_2d[:, :, mask_start:mask_start + mask_width, :] = 0
+        # Binary label smoothing: 0 -> 0.05, 1 -> 0.95
+        smoothed_labels = labels * (1.0 - 2 * label_smoothing) + label_smoothing
 
         optimizer.zero_grad()
 
         logits = model(x_1d, x_2d)
-        loss   = criterion(logits, labels)
+        loss   = criterion(logits, smoothed_labels)
 
         loss.backward()
 
@@ -109,7 +98,7 @@ def train_one_epoch(
 
         total_loss += loss.item() * len(labels)
         preds   = (torch.sigmoid(logits) > 0.5).float()
-        correct += (preds == labels).sum().item()
+        correct += (preds == labels).sum().item()  # Accuracy vs hard labels
         total   += len(labels)
 
         pbar.set_postfix({
@@ -133,6 +122,9 @@ def evaluate(
     threshold: float = 0.5
 ) -> Dict[str, float]:
     """Evaluate model on a dataloader."""
+    # Disable augmentation during evaluation
+    if hasattr(loader.dataset, 'dataset'):
+        loader.dataset.dataset.training = False
     model.eval()
 
     total_loss = 0.0
@@ -223,8 +215,8 @@ def train_model(
     """
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=max(5, patience // 4)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=10, T_mult=2
     )
 
     best_val_f1      = -1.0
@@ -250,7 +242,7 @@ def train_model(
         )
 
         current_lr = optimizer.param_groups[0]['lr']
-        scheduler.step(val_metrics['f1'])
+        scheduler.step(epoch)
 
         history['train_loss'].append(train_metrics['loss'])
         history['train_acc'].append(train_metrics['accuracy'])

@@ -39,7 +39,8 @@ class ArcFaultDataset(Dataset):
         n_fft: int = 512,
         hop_length: int = 256,
         compute_stft: bool = True,
-        device: str = 'cpu'
+        device: str = 'cpu',
+        training: bool = False
     ):
         """
         Args:
@@ -54,6 +55,7 @@ class ArcFaultDataset(Dataset):
         self.hop_length = hop_length
         self.compute_stft = compute_stft
         self.device = device
+        self.training = training  # Controls augmentation
         
         # Load data
         self.X = np.load(self.data_dir / 'X_multi.npy')  # (N, 2, 20000) — [V_ligne, I]
@@ -108,13 +110,53 @@ class ArcFaultDataset(Dataset):
         label = torch.tensor(self.y[idx], dtype=torch.float32)
         charge_idx = torch.tensor(self.charges[idx], dtype=torch.long)
         
+        # Apply temporal augmentation during training
+        if self.training:
+            x_1d = self._augment_temporal(x_1d)
+        
         # Compute STFT for 2D branch
         if self.compute_stft:
             x_2d = self._compute_stft(x_1d)  # (2, n_freq, n_time)
+            # Apply spectrogram augmentation during training
+            if self.training:
+                x_2d = self._augment_spectrogram(x_2d)
         else:
             x_2d = torch.zeros(1)  # placeholder
         
         return x_1d, x_2d, label, charge_idx
+    
+    def _augment_temporal(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Light temporal augmentation preserving physical realism.
+        - Amplitude scaling: uniform(0.95, 1.05) per channel
+        - Additive Gaussian noise: N(0, 0.005 * std(channel))
+        """
+        n_channels = x.shape[0]
+        for c in range(n_channels):
+            # Amplitude scaling
+            scale = 0.95 + 0.1 * torch.rand(1).item()
+            x[c] = x[c] * scale
+            # Small Gaussian noise
+            noise_std = 0.005 * x[c].std().item()
+            if noise_std > 0:
+                x[c] = x[c] + torch.randn_like(x[c]) * noise_std
+        return x
+    
+    def _augment_spectrogram(self, spec: torch.Tensor) -> torch.Tensor:
+        """
+        Light frequency masking on STFT spectrograms.
+        Masks 1-3 consecutive frequency bins with channel mean.
+        """
+        n_channels, n_freq, n_time = spec.shape
+        # Random number of bins to mask (1-3)
+        mask_width = torch.randint(1, 4, (1,)).item()
+        # Random start position (leave margins)
+        if n_freq > mask_width + 2:
+            start = torch.randint(1, n_freq - mask_width - 1, (1,)).item()
+            for c in range(n_channels):
+                channel_mean = spec[c].mean()
+                spec[c, start:start + mask_width, :] = channel_mean
+        return spec
     
     def _compute_stft(self, x: torch.Tensor) -> torch.Tensor:
         """

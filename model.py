@@ -154,19 +154,19 @@ class Branch1D(nn.Module):
     Temporal branch using ParametricConv1d layers.
     
     Architecture:
-      Layer 1: ParametricConv1d(2, 16, k=64) + BN + ReLU + MaxPool(4)
-      Layer 2: ParametricConv1d(16, 32, k=32) + BN + ReLU + MaxPool(4)
-      Layer 3: ParametricConv1d(32, 64, k=16) + BN + ReLU + AdaptiveAvgPool(D)
+      Layer 1: ParametricConv1d(2, 32, k=64) + BN + ReLU + MaxPool(4)
+      Layer 2: ParametricConv1d(32, 64, k=32) + BN + ReLU + MaxPool(4)
+      Layer 3: ParametricConv1d(64, 128, k=16) + BN + ReLU + AdaptiveAvgPool(D)
     
-    Output: F_L with shape (batch, 64, D)
+    Output: F_L with shape (batch, 128, D)
     """
     
     def __init__(
         self,
         in_channels: int = 2,
-        hidden_dims: Tuple[int, int, int] = (16, 32, 64),
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         kernel_sizes: Tuple[int, int, int] = (64, 32, 16),
-        output_dim: int = 32,  # D in the plan
+        output_dim: int = 64,  # D in the plan
         use_parametric: bool = True
     ):
         super().__init__()
@@ -207,7 +207,7 @@ class Branch1D(nn.Module):
             x: (batch, 2, 20000)  — [V_ligne, I]
         
         Returns:
-            F_L: (batch, 64, D)
+            F_L: (batch, 128, D)
         """
         x = self.features(x)  # (batch, 128, ~1250)
         x = self.pool(x)      # (batch, 128, D)
@@ -236,12 +236,12 @@ class Branch2D(nn.Module):
 
     Architecture:
       Freq. slice: x[:, :, freq_bin_low:freq_bin_high, :]  →  (B, 3, 51, T)
-      Layer 1: Conv2d(3,  16, 3×3) + BN + ReLU + MaxPool(2×2)
-      Layer 2: Conv2d(16, 32, 3×3) + BN + ReLU + MaxPool(2×2)
-      Layer 3: Conv2d(32, 64, 3×3) + BN + ReLU + AdaptiveAvgPool
+      Layer 1: Conv2d(3,  32, 3×3) + BN + ReLU + MaxPool(2×2)
+      Layer 2: Conv2d(32, 64, 3×3) + BN + ReLU + MaxPool(2×2)
+      Layer 3: Conv2d(64,128, 3×3) + BN + ReLU + AdaptiveAvgPool
 
     Input:  STFT spectrogram (batch, 3, n_freq, n_time) — full 257 bins
-    Output: F_H with shape (batch, 64, D)
+    Output: F_H with shape (batch, 128, D)
     """
 
     # Frequency slice constants (computed for n_fft=512, fs=1 MHz)
@@ -251,8 +251,8 @@ class Branch2D(nn.Module):
     def __init__(
         self,
         in_channels: int = 2,
-        hidden_dims: Tuple[int, int, int] = (16, 32, 64),
-        output_dim: int = 32,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
         fs: float = 1_000_000,
         n_fft: int = 512,
         freq_min_hz: float = 2_000,
@@ -290,7 +290,7 @@ class Branch2D(nn.Module):
                 channels: [V_ligne, I]
 
         Returns:
-            F_H: (batch, 64, D)
+            F_H: (batch, 128, D)
         """
         # Restrict to 2–100 kHz band: discard low-frequency load harmonics
         # and high-frequency noise above the useful arc signature band
@@ -458,7 +458,7 @@ class JointAttention(nn.Module):
     scientifically traceable (cam_L belongs to F_L, cam_H belongs to F_H).
     """
 
-    def __init__(self, channels: int = 64, reduction: int = 8):
+    def __init__(self, channels: int = 128, reduction: int = 8):
         super().__init__()
 
         self.C = channels   # single-branch channel count
@@ -518,14 +518,14 @@ class ClassifierHead(nn.Module):
     Binary classification for arc detection.
     """
     
-    def __init__(self, in_channels: int = 64, hidden_dim: int = 32):
+    def __init__(self, in_channels: int = 128, hidden_dim: int = 64):
         super().__init__()
         
         self.gap = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Sequential(
             nn.Linear(in_channels, hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.5),
+            nn.Dropout(0.3),
             nn.Linear(hidden_dim, 1)
         )
     
@@ -565,8 +565,8 @@ class ArcFaultNet(nn.Module):
     def __init__(
         self,
         in_channels: int = 2,
-        hidden_dims: Tuple[int, int, int] = (16, 32, 64),
-        output_dim: int = 32,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
         use_parametric: bool = True,
         use_joint_attention: bool = True
     ):
@@ -602,7 +602,7 @@ class ArcFaultNet(nn.Module):
         # Classifier
         self.classifier = ClassifierHead(
             in_channels=hidden_dims[-1],
-            hidden_dim=32
+            hidden_dim=64
         )
     
     def forward(
@@ -619,12 +619,12 @@ class ArcFaultNet(nn.Module):
             logits: (batch,) - raw logits for BCEWithLogitsLoss
         """
         # Extract features from both branches
-        F_L = self.branch_1d(x_1d)  # (batch, 64, D)
-        F_H = self.branch_2d(x_2d)  # (batch, 64, D)
+        F_L = self.branch_1d(x_1d)  # (batch, 128, D)
+        F_H = self.branch_2d(x_2d)  # (batch, 128, D)
         
         # Fuse with attention
         if self.use_joint_attention:
-            F_out = self.joint_attn(F_L, F_H)  # (batch, 64, D)
+            F_out = self.joint_attn(F_L, F_H)  # (batch, 128, D)
         else:
             F_concat = torch.cat([F_L, F_H], dim=1)
             F_out = self.joint_attn(F_concat)
@@ -643,33 +643,33 @@ class ArcFaultNet(nn.Module):
         Get intermediate features and all attention maps for visualization.
 
         Returns:
-            F_L      : (batch, 64, D)  — temporal branch features
-            F_H      : (batch, 64, D)  — spectral branch features
-            F_out    : (batch, 64, D)  — fused output features
-            cam_w    : (batch, 128, 1)  — joint CAM weights β per channel
-                         cam_w[:, :64, :] → weights applied to F_L (temporal)
-                         cam_w[:, 64:, :] → weights applied to F_H (spectral)
+            F_L      : (batch, 128, D)  — temporal branch features
+            F_H      : (batch, 128, D)  — spectral branch features
+            F_out    : (batch, 128, D)  — fused output features
+            cam_w    : (batch, 256, 1)  — joint CAM weights β per channel
+                         cam_w[:, :128, :] → weights applied to F_L (temporal)
+                         cam_w[:, 128:, :] → weights applied to F_H (spectral)
             sam_alpha: (batch, D, D)    — SAM attention matrix α
                          row i = attention weight that position i gives to all D positions
         """
-        F_L = self.branch_1d(x_1d)  # (batch, 64, D)
-        F_H = self.branch_2d(x_2d)  # (batch, 64, D)
+        F_L = self.branch_1d(x_1d)  # (batch, 128, D)
+        F_H = self.branch_2d(x_2d)  # (batch, 128, D)
 
         if self.use_joint_attention:
-            F_concat = torch.cat([F_L, F_H], dim=1)  # (batch, 128, D)
+            F_concat = torch.cat([F_L, F_H], dim=1)  # (batch, 256, D)
 
             # CAM weights — β ∈ (0, 1) per channel
-            cam_w = self.joint_attn.cam(F_concat)     # (batch, 128, 1)
+            cam_w = self.joint_attn.cam(F_concat)     # (batch, 256, 1)
 
             # SAM attention matrix — α[i, j] = weight pos i gives to pos j
             sam_alpha = self.joint_attn.sam.get_attn_weights(F_concat)  # (batch, D, D)
 
-            F_out = self.joint_attn(F_L, F_H)         # (batch, 64, D)
+            F_out = self.joint_attn(F_L, F_H)         # (batch, 128, D)
         else:
             # Fallback for no-attention variant
             F_concat = torch.cat([F_L, F_H], dim=1)
             F_out = self.joint_attn(F_concat)
-            cam_w = torch.ones(F_L.shape[0], 128, 1, device=F_L.device)
+            cam_w = torch.ones(F_L.shape[0], 256, 1, device=F_L.device)
             sam_alpha = torch.eye(F_L.shape[2], device=F_L.device).unsqueeze(0).expand(F_L.shape[0], -1, -1)
 
         return F_L, F_H, F_out, cam_w, sam_alpha
@@ -685,7 +685,7 @@ class ArcFaultNet_1DOnly(nn.Module):
     def __init__(self, in_channels: int = 2, use_parametric: bool = True):
         super().__init__()
         self.branch = Branch1D(in_channels=in_channels, use_parametric=use_parametric)
-        self.classifier = ClassifierHead(in_channels=64)
+        self.classifier = ClassifierHead(in_channels=128)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None) -> torch.Tensor:
         F = self.branch(x_1d)
@@ -699,8 +699,8 @@ class ArcFaultNet_NoAttention(nn.Module):
         super().__init__()
         self.branch_1d = Branch1D(in_channels=in_channels, use_parametric=use_parametric)
         self.branch_2d = Branch2D(in_channels=in_channels)
-        self.fusion = nn.Conv1d(128, 64, 1)
-        self.classifier = ClassifierHead(in_channels=64)
+        self.fusion = nn.Conv1d(256, 128, 1)
+        self.classifier = ClassifierHead(in_channels=128)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         F_L = self.branch_1d(x_1d)
@@ -733,13 +733,13 @@ class ArcFaultNet_IndependentCBAM(nn.Module):
         self.branch_2d = Branch2D(in_channels=in_channels)
         
         # Independent attention per branch
-        self.cam_1d = ChannelAttention(64)
-        self.sam_1d = SpatialAttention(64)
-        self.cam_2d = ChannelAttention(64)
-        self.sam_2d = SpatialAttention(64)
+        self.cam_1d = ChannelAttention(128)
+        self.sam_1d = SpatialAttention(128)
+        self.cam_2d = ChannelAttention(128)
+        self.sam_2d = SpatialAttention(128)
         
-        self.fusion = nn.Conv1d(128, 64, 1)
-        self.classifier = ClassifierHead(in_channels=64)
+        self.fusion = nn.Conv1d(256, 128, 1)
+        self.classifier = ClassifierHead(in_channels=128)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         F_L = self.branch_1d(x_1d)
@@ -762,27 +762,27 @@ class BaselineCNN(nn.Module):
         super().__init__()
         
         self.conv = nn.Sequential(
-            nn.Conv1d(in_channels, 16, 64, padding=32),
-            nn.BatchNorm1d(16),
-            nn.ReLU(),
-            nn.MaxPool1d(4),
-            
-            nn.Conv1d(16, 32, 32, padding=16),
+            nn.Conv1d(in_channels, 32, 64, padding=32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
             nn.MaxPool1d(4),
             
-            nn.Conv1d(32, 64, 16, padding=8),
+            nn.Conv1d(32, 64, 32, padding=16),
             nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.MaxPool1d(4),
+            
+            nn.Conv1d(64, 128, 16, padding=8),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.AdaptiveAvgPool1d(1)
         )
         
         self.fc = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(32, 1)
+            nn.Dropout(0.3),
+            nn.Linear(64, 1)
         )
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None) -> torch.Tensor:

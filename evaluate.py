@@ -1301,33 +1301,33 @@ def evaluate_model(
     output_dir.mkdir(parents=True, exist_ok=True)
     preds = (probs > threshold).astype(int)
 
-    # plot_confusion_matrix(labels, preds, output_dir / 'confusion_matrix.png')
-    # plot_roc_curve(labels, probs, output_dir / 'roc_curve.png')
-    # plot_precision_recall_curve(labels, probs, output_dir / 'pr_curve.png')
+    plot_confusion_matrix(labels, preds, output_dir / 'confusion_matrix.png')
+    plot_roc_curve(labels, probs, output_dir / 'roc_curve.png')
+    plot_precision_recall_curve(labels, probs, output_dir / 'pr_curve.png')
 
     # ── Training curves (if history file exists) ─────────────────
     history_path = Path(model_path).parent / 'history_single.json'
     if not history_path.exists():
         history_path = Path(model_path).parent / 'history.json'
-    # if history_path.exists():
-    #     print(f"\n  Plotting training curves from {history_path.name} ...")
-    #     plot_training_curves(history_path, output_dir)
-    # else:
-    #     print(f"  ⚠ No training history found, skipping training curves.")
+    if history_path.exists():
+        print(f"\n  Plotting training curves from {history_path.name} ...")
+        plot_training_curves(history_path, output_dir)
+    else:
+        print(f"  ⚠ No training history found, skipping training curves.")
 
     # ── False-negative / false-positive analysis ─────────────────
-    # analyse_false_negatives(
-    #     dataset, test_indices, probs, labels, metadata,
-    #     output_dir, threshold, n_plot=16
-    # )
-    # analyse_false_positives(
-    #     dataset, test_indices, probs, labels, metadata,
-    #     output_dir, threshold
-    # )
-    # analyse_true_positives(
-    #     dataset, test_indices, probs, labels, metadata,
-    #     output_dir, threshold, n_plot=16
-    # )
+    analyse_false_negatives(
+        dataset, test_indices, probs, labels, metadata,
+        output_dir, threshold, n_plot=16
+    )
+    analyse_false_positives(
+        dataset, test_indices, probs, labels, metadata,
+        output_dir, threshold
+    )
+    analyse_true_positives(
+        dataset, test_indices, probs, labels, metadata,
+        output_dir, threshold, n_plot=16
+    )
 
     # ── V_arc verification plots (I(t) + C2 from raw CSV) ────────
     plot_varc_verification(
@@ -1337,11 +1337,11 @@ def evaluate_model(
 
     # ── Advanced analysis plots ──────────────────────────────────
     print(f"\n  Generating advanced analysis plots ...")
-    # plot_score_distribution(labels, probs, output_dir, threshold)
-    # plot_threshold_analysis(labels, probs, output_dir)
-    # plot_calibration_curve(labels, probs, output_dir)
-    # plot_confidence_distribution(labels, probs, output_dir, threshold)
-    # plot_per_experiment_metrics(test_indices, labels, probs, metadata, output_dir, threshold)
+    plot_score_distribution(labels, probs, output_dir, threshold)
+    plot_threshold_analysis(labels, probs, output_dir)
+    plot_calibration_curve(labels, probs, output_dir)
+    plot_confidence_distribution(labels, probs, output_dir, threshold)
+    plot_per_experiment_metrics(test_indices, labels, probs, metadata, output_dir, threshold)
 
     # ── Save metrics JSON ────────────────────────────────────────
     results = {

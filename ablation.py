@@ -83,12 +83,12 @@ def evaluate_variant_random(
     variant_name: str,
     dataset: ArcFaultDataset,
     device: torch.device,
-    epochs: int = 80,
-    lr: float = 3e-4,
-    weight_decay: float = 5e-4,
+    epochs: int = 200,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
     batch_size: int = 64,
-    patience: int = 10,
-    gradient_clip: float = 0.5,
+    patience: int = 20,
+    gradient_clip: float = 1.0,
     use_pos_weight: bool = False,
     num_workers: int = 4,
     seed: int = 42
@@ -152,12 +152,12 @@ def evaluate_variant_loco(
     variant_name: str,
     dataset: ArcFaultDataset,
     device: torch.device,
-    epochs: int = 80,
-    lr: float = 3e-4,
-    weight_decay: float = 5e-4,
+    epochs: int = 200,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
     batch_size: int = 64,
-    patience: int = 10,
-    gradient_clip: float = 0.5,
+    patience: int = 20,
+    gradient_clip: float = 1.0,
     use_pos_weight: bool = False,
     num_workers: int = 4,
     seed: int = 42
@@ -235,12 +235,12 @@ def run_ablation_study(
     device: torch.device,
     mode: str = 'random',           # 'random' | 'loco'
     n_repetitions: int = 10,        # only used in 'random' mode
-    epochs: int = 80,
-    lr: float = 3e-4,
-    weight_decay: float = 5e-4,
+    epochs: int = 200,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
     batch_size: int = 64,
-    patience: int = 10,
-    gradient_clip: float = 0.5,
+    patience: int = 20,
+    gradient_clip: float = 1.0,
     use_pos_weight: bool = False,
     output_dir: Path = Path('ablation_results'),
     num_workers: int = 4
@@ -445,12 +445,12 @@ def main():
                         help='random = fast multi-rep split | loco = leave-one-charge-out (thesis)')
     parser.add_argument('--repetitions', type=int, default=10,
                         help='(random mode) Number of repetitions per variant')
-    parser.add_argument('--epochs', type=int, default=80)
-    parser.add_argument('--lr', type=float, default=3e-4)
-    parser.add_argument('--weight-decay', type=float, default=5e-4)
+    parser.add_argument('--epochs', type=int, default=200)
+    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--weight-decay', type=float, default=1e-4)
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--patience', type=int, default=10)
-    parser.add_argument('--gradient-clip', type=float, default=0.5)
+    parser.add_argument('--patience', type=int, default=20)
+    parser.add_argument('--gradient-clip', type=float, default=1.0)
     parser.add_argument('--use-pos-weight', action='store_true')
     parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
     parser.add_argument('--output-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/ablation_results')
