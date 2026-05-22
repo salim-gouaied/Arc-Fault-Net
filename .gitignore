@@ -12,12 +12,16 @@ data/Dataset
 # ── Données prétraitées (NumPy arrays, lourds) ──────────
 labeled_dataset/*.npy
 labeled_dataset/*.csv
+combined_dataset/*.npy
+combined_dataset/*.csv
 TestModel/prepared_data/X_multi.npy
 TestModel/prepared_data/y.npy
 # On garde uniquement les fichiers de config légers
 !labeled_dataset/charge_map.json
 !labeled_dataset/config.json
 !labeled_dataset/config_multi.json
+!combined_dataset/charge_map.json
+!combined_dataset/config.json
 
 # ── Checkpoints et runs d'entraînement ──────────────────
 runs/*
@@ -25,11 +29,17 @@ runs/*
 runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260504_114636/eval/
 !runs/arcfaultnet_single_20260513_115122/
-!runs/arcfaultnet_single_20260521_121423
+!runs/arcfaultnet_single_20260521_121423/resultsOntestData/
 !runs/arcfaultnet_single_20260521_121423/eval
+!
 *.pt
 *.pth
 *.onnx
+!runs/arcfaultnet_single_20260522_114209/
+!runs/arcfaultnet_single_20260522_114209/eval
+!runs/arcfaultnet_single_20260522_114209/resultsOnHeldOut/
+!runs/arcfaultnet_single_20260522_114209/results.json
+
 # ── Résultats d'ablation et exports générés ─────────────
 ablation_results/
 exports/

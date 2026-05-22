@@ -1,0 +1,24 @@
+{
+  "description": "Combined: labeled_dataset (juillet) + OthmaneSalim10052026 (80%)",
+  "n_samples": 10860,
+  "n_label0": 5898,
+  "n_label1": 4962,
+  "n_from_original": 9386,
+  "n_from_othmanesalim": 1474,
+  "n_holdout": 368,
+  "holdout_ratio": 0.2,
+  "seed": 42,
+  "FS": 1000000,
+  "F0": 50,
+  "SAMPLES_PER_CYCLE": 20000,
+  "n_channels": 2,
+  "channel_names": [
+    "V_ligne",
+    "I"
+  ],
+  "X_shape": [
+    10860,
+    2,
+    20000
+  ]
+}

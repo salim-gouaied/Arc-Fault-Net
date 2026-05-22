@@ -40,7 +40,7 @@ from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score
 )
 
-from model import get_model, ArcFaultNet
+from mini_evaluate import build_model_from_checkpoint
 from dataset import ArcFaultDataset
 
 # ─────────────────────────────────────────────────────
@@ -57,27 +57,13 @@ RESULTS_DIR  = PROJECT_ROOT / 'TestModel' / 'results'
 # ─────────────────────────────────────────────────────
 
 def load_model(checkpoint_path: Path, device: torch.device) -> nn.Module:
-    """Load ArcFaultNet from a .pt checkpoint."""
-    results_path = checkpoint_path.parent / 'results.json'
-    model_name   = 'arcfaultnet'
-    if results_path.exists():
-        with open(results_path) as f:
-            info = json.load(f)
-        model_name = info.get('model_name', 'arcfaultnet')
-
-    model = get_model(model_name, in_channels=2)
-    state = torch.load(checkpoint_path, map_location=device)
-
-    # Handle wrapped state dicts
-    if isinstance(state, dict) and 'model_state_dict' in state:
-        state = state['model_state_dict']
-    elif isinstance(state, dict) and 'state_dict' in state:
-        state = state['state_dict']
-
-    model.load_state_dict(state)
-    model.to(device)
-    model.eval()
-    return model
+    """Load ArcFaultNet from a .pt checkpoint.
+    
+    Uses auto-detection from mini_evaluate.py to reconstruct the exact
+    architecture (SE blocks, amplitude, deep classifier, etc.) that
+    matches the checkpoint's state_dict keys.
+    """
+    return build_model_from_checkpoint(checkpoint_path, device)
 
 
 # ─────────────────────────────────────────────────────
@@ -199,8 +185,9 @@ def plot_confusion_matrix(labels, probs, threshold, save_path):
                       edgecolor='#34495e', alpha=0.9),
             color='white', fontweight='bold')
 
-    ax.set_title('Confusion Matrix — OthmaneSalim10052026\n'
-                 'Model: arcfaultnet_single_20260513_115122',
+    run_name = getattr(plot_confusion_matrix, '_run_name', 'unknown')
+    ax.set_title(f'Confusion Matrix — OthmaneSalim10052026\n'
+                 f'Model: {run_name}',
                  fontsize=14, fontweight='bold', pad=15)
     ax.set_aspect('equal')
     plt.tight_layout()
@@ -346,7 +333,8 @@ def plot_training_curves(history_path: Path, save_path: Path):
         ax.set_yscale('log')
     style(ax, 'Learning Rate Schedule', 'LR')
 
-    fig.suptitle('Training History — arcfaultnet_single_20260513_115122',
+    run_name = getattr(plot_training_curves, '_run_name', 'unknown')
+    fig.suptitle(f'Training History — {run_name}',
                  fontsize=16, fontweight='bold', y=1.01)
     plt.tight_layout()
     plt.savefig(save_path, dpi=180, bbox_inches='tight', facecolor='#fafafa')
@@ -467,13 +455,19 @@ def main():
     # ── Plots ─────────────────────────────────────────
     print("\n[5/5] Generating plots …")
 
+    # Derive the run directory and run name from the checkpoint path
+    model_run_dir = model_path.parent
+    run_name = model_run_dir.name
+    plot_confusion_matrix._run_name = run_name
+    plot_training_curves._run_name  = run_name
+
     plot_confusion_matrix(labels, probs, threshold,
                           results_dir / 'confusion_matrix.png')
     plot_roc(labels, probs, results_dir / 'roc_curve.png')
     plot_pr_curve(labels, probs, results_dir / 'pr_curve.png')
     plot_score_distribution(labels, probs, threshold,
                             results_dir / 'score_distribution.png')
-    plot_training_curves(MODEL_RUN / 'history_single.json',
+    plot_training_curves(model_run_dir / 'history_single.json',
                          results_dir / 'training_curves.png')
 
     print(f"\n{'='*60}")
