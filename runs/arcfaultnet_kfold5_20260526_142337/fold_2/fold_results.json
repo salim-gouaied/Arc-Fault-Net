@@ -1,0 +1,10 @@
+{
+  "fold": 2,
+  "seed": 43,
+  "best_epoch": 25,
+  "test_accuracy": 0.9539594843462247,
+  "test_precision": 0.9597938144230949,
+  "test_recall": 0.9385080645066682,
+  "test_f1": 0.9490315953987017,
+  "test_specificity": 0.9669491525341785
+}

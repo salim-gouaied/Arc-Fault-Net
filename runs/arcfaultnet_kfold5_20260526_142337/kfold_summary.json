@@ -1,0 +1,73 @@
+{
+  "test_accuracy_mean": 0.9454880294659299,
+  "test_accuracy_std": 0.007230560010828961,
+  "test_f1_mean": 0.9388602724079602,
+  "test_f1_std": 0.008575659042648207,
+  "test_precision_mean": 0.962574565351747,
+  "test_precision_std": 0.019760199219421102,
+  "test_recall_mean": 0.9171710034667026,
+  "test_recall_std": 0.02457022073582841,
+  "test_specificity_mean": 0.9693072267424047,
+  "test_specificity_std": 0.017627093618377547,
+  "model_name": "arcfaultnet",
+  "n_folds": 5,
+  "seed": 42,
+  "epochs": 200,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "batch_size": 64,
+  "patience": 10,
+  "fold_results": [
+    {
+      "fold": 1,
+      "seed": 42,
+      "best_epoch": 23,
+      "test_accuracy": 0.9461325966850829,
+      "test_precision": 0.9866518353616612,
+      "test_recall": 0.894153225797438,
+      "test_f1": 0.9381279696187764,
+      "test_specificity": 0.9898305084661879
+    },
+    {
+      "fold": 2,
+      "seed": 43,
+      "best_epoch": 25,
+      "test_accuracy": 0.9539594843462247,
+      "test_precision": 0.9597938144230949,
+      "test_recall": 0.9385080645066682,
+      "test_f1": 0.9490315953987017,
+      "test_specificity": 0.9669491525341785
+    },
+    {
+      "fold": 3,
+      "seed": 44,
+      "best_epoch": 26,
+      "test_accuracy": 0.9516574585635359,
+      "test_precision": 0.9713071200746939,
+      "test_recall": 0.9213709677326475,
+      "test_f1": 0.9456802846988175,
+      "test_specificity": 0.977118644059516
+    },
+    {
+      "fold": 4,
+      "seed": 45,
+      "best_epoch": 34,
+      "test_accuracy": 0.9419889502762431,
+      "test_precision": 0.9270935960499793,
+      "test_recall": 0.9476334340287247,
+      "test_f1": 0.9372509910072012,
+      "test_specificity": 0.9372349448605833
+    },
+    {
+      "fold": 5,
+      "seed": 46,
+      "best_epoch": 9,
+      "test_accuracy": 0.9337016574585635,
+      "test_precision": 0.9680264608493051,
+      "test_recall": 0.8841893252680343,
+      "test_f1": 0.9242105213163047,
+      "test_specificity": 0.9754028837915573
+    }
+  ],
+  "training_duration_seconds": 2130.380949497223
+}
