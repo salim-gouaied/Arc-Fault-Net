@@ -1,0 +1,32 @@
+Held-Out Evaluation — OthmaneSalim (20% never-seen)
+Model: arcfaultnet_single_20260522_114209
+Threshold: 0.5
+
+              precision    recall  f1-score   support
+
+      Normal     0.9959    0.9959    0.9959       245
+         Arc     0.9919    0.9919    0.9919       123
+
+    accuracy                         0.9946       368
+   macro avg     0.9939    0.9939    0.9939       368
+weighted avg     0.9946    0.9946    0.9946       368
+
+Metrics:
+{
+  "description": "Held-out OthmaneSalim samples (20%, never seen during training)",
+  "accuracy": 0.9945652173913043,
+  "precision": 0.991869918699187,
+  "recall": 0.991869918699187,
+  "f1": 0.991869918699187,
+  "specificity": 0.995918367306289,
+  "auc_roc": 0.9978762236601958,
+  "average_precision": 0.9945920662789476,
+  "tp": 122,
+  "fp": 1,
+  "fn": 1,
+  "tn": 244,
+  "total": 368,
+  "threshold": 0.5,
+  "model_checkpoint": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs/arcfaultnet_single_20260522_114209/best_single.pt",
+  "n_params": 320609
+}

@@ -1,0 +1,13 @@
+{
+  "description": "Full OthmaneSalim dataset (1842 samples, includes train+holdout)",
+  "accuracy": 0.994028230184582,
+  "precision": 0.9856938483547926,
+  "recall": 0.9985507246376811,
+  "f1": 0.9920806335493161,
+  "specificity": 0.9913194444358393,
+  "tp": 689,
+  "fp": 10,
+  "fn": 1,
+  "tn": 1142,
+  "total": 1842
+}

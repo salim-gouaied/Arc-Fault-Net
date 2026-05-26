@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.model_selection import StratifiedKFold
 
 import numpy as np
 import random
@@ -28,6 +29,7 @@ from pathlib import Path
 import json
 import argparse
 from datetime import datetime
+import time
 from tqdm import tqdm
 from typing import Dict, Tuple, Optional
 import warnings
@@ -321,13 +323,18 @@ def run_leave_one_charge_out_cv(
     output_dir: Path = Path('runs'),
     num_workers: int = 4,
     seed: int = 42,
-    fold_filter: Optional[int] = None
+    fold_filter: Optional[int] = None,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
 ) -> Dict:
     """
     Run leave-one-charge-out cross-validation.
 
     fold_filter: if set, run only that fold index (0-based).
     """
+    start_time = time.time()
     splitter = LeaveOneChargeOutSplitter(dataset)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -371,7 +378,10 @@ def run_leave_one_charge_out_cv(
             pw = compute_pos_weight(train_labels, device)
             print(f"    pos_weight = {pw.item():.3f}")
 
-        model = get_model(model_name, in_channels=2).to(device)
+        model = get_model(model_name, in_channels=2,
+                      use_se=use_se, se_reduction=se_reduction,
+                      use_amplitude=use_amplitude,
+                      deep_classifier=deep_classifier).to(device)
         n_params = sum(p.numel() for p in model.parameters())
 
         model, history = train_model(
@@ -466,6 +476,7 @@ def run_leave_one_charge_out_cv(
         'std_f1':         float(std_f1),
         'mean_precision': float(avg_precision),
         'mean_recall':    float(avg_recall),
+        'training_duration_seconds': time.time() - start_time,
         'fold_results':   all_results
     }
 
@@ -496,7 +507,11 @@ def run_single_training(
     use_pos_weight: bool = False,
     output_dir: Path = Path('runs'),
     num_workers: int = 4,
-    seed: int = 42
+    seed: int = 42,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
 ) -> Dict:
     """
     Single training run with random train/val/test split.
@@ -504,6 +519,7 @@ def run_single_training(
     NOTE: Does NOT test generalization to unseen charges.
           Use for quick smoke tests only.
     """
+    start_time = time.time()
     set_seed(seed)
 
     indices = np.random.permutation(len(dataset))
@@ -545,7 +561,10 @@ def run_single_training(
         pw = compute_pos_weight(train_labels, device)
         print(f"  pos_weight = {pw.item():.3f}")
 
-    model = get_model(model_name, in_channels=2).to(device)
+    model = get_model(model_name, in_channels=2,
+                      use_se=use_se, se_reduction=se_reduction,
+                      use_amplitude=use_amplitude,
+                      deep_classifier=deep_classifier).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
 
@@ -584,6 +603,7 @@ def run_single_training(
         'test_precision': float(test_metrics['precision']),
         'test_recall':    float(test_metrics['recall']),
         'test_specificity': float(test_metrics['specificity']),
+        'training_duration_seconds': time.time() - start_time,
     }
 
     with open(run_dir / 'results.json', 'w') as f:
@@ -592,6 +612,158 @@ def run_single_training(
     torch.save(model.state_dict(), run_dir / 'final_model.pt')
     print(f"\nResults saved to: {run_dir}")
     return results
+
+
+# ═══════════════════════════════════════════════════════
+#  K-FOLD CROSS-VALIDATION
+# ═══════════════════════════════════════════════════════
+
+def run_kfold_cv(
+    model_name: str,
+    dataset: ArcFaultDataset,
+    device: torch.device,
+    n_folds: int = 5,
+    epochs: int = 80,
+    lr: float = 3e-4,
+    weight_decay: float = 5e-4,
+    batch_size: int = 64,
+    patience: int = 10,
+    gradient_clip: float = 0.5,
+    threshold: float = 0.5,
+    use_pos_weight: bool = False,
+    output_dir: Path = Path('runs'),
+    num_workers: int = 4,
+    seed: int = 42,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
+) -> Dict:
+    """
+    Stratified K-Fold cross-validation.
+
+    Each fold trains a fresh model on (K-1) folds and evaluates on the held-out fold.
+    At the end, reports mean ± std across all folds to give a confidence interval.
+    Each fold uses a different seed so the data split AND weight init differ.
+    """
+    start_time = time.time()
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_dir   = output_dir / f"{model_name}_kfold{n_folds}_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    labels = dataset.y  # (N,) numpy array of 0/1
+    indices = np.arange(len(dataset))
+
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+
+    print(f"\n{'='*60}")
+    print(f"STRATIFIED {n_folds}-FOLD CROSS-VALIDATION")
+    print(f"Model: {model_name}  |  seed={seed}")
+    print(f"{'='*60}")
+
+    fold_results = []
+
+    for fold_idx, (train_val_idx, test_idx) in enumerate(skf.split(indices, labels)):
+        fold_seed = seed + fold_idx
+        set_seed(fold_seed)
+
+        # Split train_val further into train/val (85%/15%)
+        n_val = int(len(train_val_idx) * 0.15)
+        np.random.shuffle(train_val_idx)
+        val_idx   = train_val_idx[:n_val]
+        train_idx = train_val_idx[n_val:]
+
+        print(f"\n--- Fold {fold_idx+1}/{n_folds}  (seed={fold_seed}) ---")
+        print(f"    Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
+
+        fold_dir = run_dir / f"fold_{fold_idx+1}"
+        fold_dir.mkdir(exist_ok=True)
+        writer = SummaryWriter(fold_dir / 'tensorboard')
+
+        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
+                                  shuffle=True, num_workers=num_workers,
+                                  pin_memory=True, drop_last=True)
+        val_loader   = DataLoader(Subset(dataset, val_idx),   batch_size=batch_size,
+                                  shuffle=False, num_workers=num_workers, pin_memory=True)
+        test_loader  = DataLoader(Subset(dataset, test_idx),  batch_size=batch_size,
+                                  shuffle=False, num_workers=num_workers, pin_memory=True)
+
+        pw = None
+        if use_pos_weight:
+            pw = compute_pos_weight(dataset.y[train_idx], device)
+            print(f"    pos_weight = {pw.item():.3f}")
+
+        model = get_model(model_name, in_channels=2,
+                          use_se=use_se, se_reduction=se_reduction,
+                          use_amplitude=use_amplitude,
+                          deep_classifier=deep_classifier).to(device)
+
+        if fold_idx == 0:
+            print(f"    Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+        model, history = train_model(
+            model, train_loader, val_loader, device,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
+            patience=patience, gradient_clip=gradient_clip,
+            threshold=threshold, pos_weight=pw,
+            checkpoint_dir=fold_dir, writer=writer,
+            fold_name=f"fold_{fold_idx+1}"
+        )
+
+        criterion    = nn.BCEWithLogitsLoss()
+        test_metrics = evaluate(model, test_loader, criterion, device,
+                                f"Fold {fold_idx+1} Test", threshold)
+        writer.close()
+
+        fold_result = {
+            'fold':       fold_idx + 1,
+            'seed':       fold_seed,
+            'best_epoch': history['best_epoch'],
+            **{f'test_{k}': float(v) for k, v in test_metrics.items()
+               if k in ('accuracy', 'f1', 'precision', 'recall', 'specificity')}
+        }
+        fold_results.append(fold_result)
+
+        print(f"    → Acc={100*test_metrics['accuracy']:.2f}%  "
+              f"F1={100*test_metrics['f1']:.2f}%  "
+              f"AUC (val)={history.get('best_val_f1', 0)*100:.2f}%")
+
+        with open(fold_dir / 'fold_results.json', 'w') as f:
+            json.dump(fold_result, f, indent=2)
+
+    # ── Summary ──────────────────────────────────────────────
+    metrics = ['test_accuracy', 'test_f1', 'test_precision', 'test_recall', 'test_specificity']
+    summary = {}
+    print(f"\n{'='*60}")
+    print(f"K-FOLD SUMMARY ({n_folds} folds)")
+    print(f"{'='*60}")
+    for m in metrics:
+        vals = np.array([r[m] for r in fold_results])
+        mean, std = vals.mean(), vals.std()
+        label = m.replace('test_', '').capitalize()
+        print(f"  {label:12s}: {100*mean:.2f}% ± {100*std:.2f}%")
+        summary[f'{m}_mean'] = float(mean)
+        summary[f'{m}_std']  = float(std)
+
+    summary.update({
+        'model_name':  model_name,
+        'n_folds':     n_folds,
+        'seed':        seed,
+        'epochs':      epochs,
+        'lr':          lr,
+        'weight_decay': weight_decay,
+        'batch_size':  batch_size,
+        'patience':    patience,
+        'fold_results': fold_results,
+        'training_duration_seconds': time.time() - start_time,
+    })
+
+    with open(run_dir / 'kfold_summary.json', 'w') as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\nResults saved to: {run_dir}")
+    return summary
 
 
 # ═══════════════════════════════════════════════════════
@@ -605,11 +777,13 @@ def main():
                         choices=['arcfaultnet', '1d_only', 'no_attention',
                                  'standard_conv', 'independent_cbam', 'baseline_cnn'],
                         help='Model to train')
-    parser.add_argument('--mode', type=str, default='cv',
-                        choices=['cv', 'single'],
-                        help='cv = leave-one-charge-out | single = random split')
+    parser.add_argument('--mode', type=str, default='single',
+                        choices=['cv', 'single', 'kfold'],
+                        help='cv = leave-one-charge-out | single = random split | kfold = stratified K-fold')
     parser.add_argument('--fold', type=int, default=None,
                         help='(cv mode) Run only this fold index (0-based)')
+    parser.add_argument('--n-folds', type=int, default=5,
+                        help='(kfold mode) Number of folds (default: 5)')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
@@ -626,6 +800,15 @@ def main():
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true', help='Force CPU training')
+    # Architecture enhancement flags
+    parser.add_argument('--use-se', action='store_true',
+                        help='Add Squeeze-and-Excitation blocks to conv layers')
+    parser.add_argument('--se-reduction', type=int, default=8,
+                        help='SE block reduction ratio')
+    parser.add_argument('--use-amplitude', action='store_true',
+                        help='Add learnable amplitude to Gabor filters')
+    parser.add_argument('--deep-clf', action='store_true',
+                        help='Use deeper classifier head with BatchNorm')
 
     args = parser.parse_args()
 
@@ -660,7 +843,33 @@ def main():
             output_dir=output_dir,
             num_workers=args.num_workers,
             seed=args.seed,
-            fold_filter=args.fold
+            fold_filter=args.fold,
+            use_se=args.use_se,
+            se_reduction=args.se_reduction,
+            use_amplitude=args.use_amplitude,
+            deep_classifier=args.deep_clf
+        )
+    elif args.mode == 'kfold':
+        run_kfold_cv(
+            model_name=args.model,
+            dataset=dataset,
+            device=device,
+            n_folds=args.n_folds,
+            epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            batch_size=args.batch_size,
+            patience=args.patience,
+            gradient_clip=args.gradient_clip,
+            threshold=args.threshold,
+            use_pos_weight=args.use_pos_weight,
+            output_dir=output_dir,
+            num_workers=args.num_workers,
+            seed=args.seed,
+            use_se=args.use_se,
+            se_reduction=args.se_reduction,
+            use_amplitude=args.use_amplitude,
+            deep_classifier=args.deep_clf
         )
     else:
         run_single_training(
@@ -677,7 +886,11 @@ def main():
             use_pos_weight=args.use_pos_weight,
             output_dir=output_dir,
             num_workers=args.num_workers,
-            seed=args.seed
+            seed=args.seed,
+            use_se=args.use_se,
+            se_reduction=args.se_reduction,
+            use_amplitude=args.use_amplitude,
+            deep_classifier=args.deep_clf
         )
 
 

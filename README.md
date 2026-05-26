@@ -102,10 +102,10 @@ Expected output:
 ### 4. Train the model
 
 ```bash
-# Quick test (random split)
+# Standard training (random split)
 python train.py --mode single --epochs 50 --batch-size 32 --num-workers 0
 
-# Full leave-one-charge-out cross-validation (thesis results)
+# Leave-one-charge-out cross-validation (thesis results)
 python train.py --mode cv --epochs 200 --batch-size 64
 ```
 

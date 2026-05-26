@@ -24,7 +24,6 @@ TestModel/prepared_data/y.npy
 !combined_dataset/config.json
 
 # ── Checkpoints et runs d'entraînement ──────────────────
-runs/*
 !runs/arcfaultnet_single_20260504_114636/
 runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260504_114636/eval/

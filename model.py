@@ -66,7 +66,8 @@ class ParametricConv1d(nn.Module):
         padding: int = 0,
         fs: float = 1_000_000,  # Sampling frequency
         f0_init_range: Tuple[float, float] = (100, 50000),  # Hz
-        sigma_init_range: Tuple[float, float] = (0.0001, 0.001)  # seconds
+        sigma_init_range: Tuple[float, float] = (0.0001, 0.001),  # seconds
+        use_amplitude: bool = False
     ):
         super().__init__()
         
@@ -104,6 +105,12 @@ class ParametricConv1d(nn.Module):
         
         # Learnable bias
         self.bias = nn.Parameter(torch.zeros(out_channels))
+        
+        # Optional learnable amplitude per filter
+        if use_amplitude:
+            self.amplitude = nn.Parameter(torch.ones(out_channels, in_channels))
+        else:
+            self.amplitude = None
     
     def _generate_filters(self) -> torch.Tensor:
         """
@@ -128,6 +135,10 @@ class ParametricConv1d(nn.Module):
         # Gabor filter
         filters = gaussian * oscillation  # (O, I, K)
         
+        # Apply learnable amplitude if enabled
+        if self.amplitude is not None:
+            filters = self.amplitude.unsqueeze(-1) * filters
+        
         # Normalize to unit L2 norm
         filters = F.normalize(filters, p=2, dim=-1)
         
@@ -143,6 +154,37 @@ class ParametricConv1d(nn.Module):
         """
         filters = self._generate_filters()
         return F.conv1d(x, filters, self.bias, self.stride, self.padding)
+
+
+# ═══════════════════════════════════════════════════════
+#  SQUEEZE-AND-EXCITATION BLOCK
+# ═══════════════════════════════════════════════════════
+
+class SEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation block for 1-D and 2-D feature maps.
+    
+    Learns channel-wise attention weights via global pooling + FC layers.
+    Helps the network focus on the most informative feature channels.
+    """
+    def __init__(self, channels: int, reduction: int = 8):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(channels, channels // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // reduction, channels),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 3:       # 1-D features: (B, C, L)
+            gap = x.mean(-1)
+        else:                  # 2-D features: (B, C, H, W)
+            gap = x.mean([-2, -1])
+        w = self.fc(gap)
+        for _ in range(x.dim() - 2):
+            w = w.unsqueeze(-1)
+        return x * w
 
 
 # ═══════════════════════════════════════════════════════
@@ -167,7 +209,10 @@ class Branch1D(nn.Module):
         hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         kernel_sizes: Tuple[int, int, int] = (64, 32, 16),
         output_dim: int = 64,  # D in the plan
-        use_parametric: bool = True
+        use_parametric: bool = True,
+        use_se: bool = False,
+        se_reduction: int = 8,
+        use_amplitude: bool = False
     ):
         super().__init__()
         
@@ -182,7 +227,8 @@ class Branch1D(nn.Module):
                 conv = ParametricConv1d(
                     dims[i], dims[i+1],
                     kernel_size=kernel_sizes[i],
-                    padding=kernel_sizes[i] // 2
+                    padding=kernel_sizes[i] // 2,
+                    use_amplitude=use_amplitude
                 )
             else:
                 conv = nn.Conv1d(
@@ -194,6 +240,9 @@ class Branch1D(nn.Module):
             layers.append(conv)
             layers.append(nn.BatchNorm1d(dims[i+1]))
             layers.append(nn.ReLU(inplace=True))
+            
+            if use_se:
+                layers.append(SEBlock(dims[i+1], reduction=se_reduction))
             
             if i < 2:
                 layers.append(nn.MaxPool1d(4))
@@ -256,7 +305,9 @@ class Branch2D(nn.Module):
         fs: float = 1_000_000,
         n_fft: int = 512,
         freq_min_hz: float = 2_000,
-        freq_max_hz: float = 100_000
+        freq_max_hz: float = 100_000,
+        use_se: bool = False,
+        se_reduction: int = 8
     ):
         super().__init__()
 
@@ -274,6 +325,9 @@ class Branch2D(nn.Module):
             layers.append(nn.Conv2d(dims[i], dims[i+1], kernel_size=3, padding=1))
             layers.append(nn.BatchNorm2d(dims[i+1]))
             layers.append(nn.ReLU(inplace=True))
+
+            if use_se:
+                layers.append(SEBlock(dims[i+1], reduction=se_reduction))
 
             if i < 2:
                 layers.append(nn.MaxPool2d(2))
@@ -518,16 +572,29 @@ class ClassifierHead(nn.Module):
     Binary classification for arc detection.
     """
     
-    def __init__(self, in_channels: int = 128, hidden_dim: int = 64):
+    def __init__(self, in_channels: int = 128, hidden_dim: int = 64, deep: bool = False):
         super().__init__()
         
         self.gap = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(in_channels, hidden_dim),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_dim, 1)
-        )
+        if deep:
+            self.fc = nn.Sequential(
+                nn.Linear(in_channels, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.5),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.BatchNorm1d(hidden_dim // 2),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.3),
+                nn.Linear(hidden_dim // 2, 1),
+            )
+        else:
+            self.fc = nn.Sequential(
+                nn.Linear(in_channels, hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.3),
+                nn.Linear(hidden_dim, 1)
+            )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -568,7 +635,12 @@ class ArcFaultNet(nn.Module):
         hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         output_dim: int = 64,
         use_parametric: bool = True,
-        use_joint_attention: bool = True
+        use_joint_attention: bool = True,
+        use_se: bool = False,
+        se_reduction: int = 8,
+        use_amplitude: bool = False,
+        deep_classifier: bool = False,
+        classifier_hidden: int = 64
     ):
         super().__init__()
         
@@ -579,14 +651,19 @@ class ArcFaultNet(nn.Module):
             in_channels=in_channels,
             hidden_dims=hidden_dims,
             output_dim=output_dim,
-            use_parametric=use_parametric
+            use_parametric=use_parametric,
+            use_se=use_se,
+            se_reduction=se_reduction,
+            use_amplitude=use_amplitude
         )
         
         # Branch 2D - Spectral
         self.branch_2d = Branch2D(
             in_channels=in_channels,
             hidden_dims=hidden_dims,
-            output_dim=output_dim
+            output_dim=output_dim,
+            use_se=use_se,
+            se_reduction=se_reduction
         )
         
         # Joint Attention
@@ -602,7 +679,8 @@ class ArcFaultNet(nn.Module):
         # Classifier
         self.classifier = ClassifierHead(
             in_channels=hidden_dims[-1],
-            hidden_dim=64
+            hidden_dim=classifier_hidden,
+            deep=deep_classifier
         )
     
     def forward(
@@ -795,7 +873,14 @@ class BaselineCNN(nn.Module):
 #  MODEL FACTORY
 # ═══════════════════════════════════════════════════════
 
-def get_model(model_name: str, in_channels: int = 2) -> nn.Module:
+def get_model(
+    model_name: str,
+    in_channels: int = 2,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
+) -> nn.Module:
     """
     Factory function to get model by name.
     
@@ -806,9 +891,20 @@ def get_model(model_name: str, in_channels: int = 2) -> nn.Module:
       - standard_conv: Standard Conv1d instead of parametric
       - independent_cbam: Independent CBAM per branch
       - baseline_cnn: Simple CNN baseline
+    
+    Enhancement flags (applied to arcfaultnet only):
+      - use_se: Add Squeeze-and-Excitation blocks after each conv layer
+      - use_amplitude: Add learnable amplitude to Gabor filters
+      - deep_classifier: Use deeper classifier head with BatchNorm
     """
     models = {
-        'arcfaultnet': lambda: ArcFaultNet(in_channels=in_channels),
+        'arcfaultnet': lambda: ArcFaultNet(
+            in_channels=in_channels,
+            use_se=use_se,
+            se_reduction=se_reduction,
+            use_amplitude=use_amplitude,
+            deep_classifier=deep_classifier
+        ),
         '1d_only': lambda: ArcFaultNet_1DOnly(in_channels=in_channels),
         'no_attention': lambda: ArcFaultNet_NoAttention(in_channels=in_channels),
         'standard_conv': lambda: ArcFaultNet_StandardConv(in_channels=in_channels),
@@ -820,6 +916,71 @@ def get_model(model_name: str, in_channels: int = 2) -> nn.Module:
         raise ValueError(f"Unknown model: {model_name}. Available: {list(models.keys())}")
     
     return models[model_name]()
+
+
+# ═══════════════════════════════════════════════════════
+#  AUTO-DETECT ARCHITECTURE FROM CHECKPOINT
+# ═══════════════════════════════════════════════════════
+
+def build_model_from_checkpoint(ckpt_path, device='cpu'):
+    """
+    Auto-detect model architecture from checkpoint state_dict keys
+    and reconstruct the exact model used during training.
+    
+    This handles all combinations of:
+      - SE blocks (use_se)
+      - Learnable amplitude (use_amplitude)
+      - Deep classifier (deep_classifier)
+    
+    Args:
+        ckpt_path: Path to .pt checkpoint file
+        device: Device to load model onto
+    
+    Returns:
+        model: Loaded model in eval mode
+    """
+    sd = torch.load(ckpt_path, map_location='cpu')
+
+    # Detect hidden_dims from fusion weight shape [C, 2C, 1]
+    C = sd['joint_attn.fusion.weight'].shape[0]
+
+    # Detect hidden_dims[0] from first ParametricConv1d f0 shape
+    C0 = sd['branch_1d.features.0.f0'].shape[0]
+    C1 = C0 * 2
+    hidden_dims = (C0, C1, C)
+
+    # Detect optional features from state_dict keys
+    use_amplitude   = 'branch_1d.features.0.amplitude' in sd
+    use_se          = 'branch_1d.features.3.fc.0.weight' in sd
+    d_k             = sd['joint_attn.sam.query.weight'].shape[0]
+    clf_hidden      = sd['classifier.fc.0.weight'].shape[0]
+    deep_classifier = 'classifier.fc.4.weight' in sd
+
+    # Auto-detect SE reduction from checkpoint
+    if use_se:
+        se_reduced = sd['branch_1d.features.3.fc.0.weight'].shape[0]
+        se_reduction = C0 // se_reduced
+    else:
+        se_reduction = 8
+
+    print(f"  Detected: hidden_dims={hidden_dims}, C={C}, d_k={d_k}")
+    print(f"  amplitude={use_amplitude}, SE={use_se}, deep_clf={deep_classifier}")
+
+    model = ArcFaultNet(
+        in_channels=2,
+        hidden_dims=hidden_dims,
+        output_dim=64,
+        use_parametric=True,
+        use_joint_attention=True,
+        use_se=use_se,
+        se_reduction=se_reduction,
+        use_amplitude=use_amplitude,
+        deep_classifier=deep_classifier,
+        classifier_hidden=clf_hidden
+    )
+    model.load_state_dict(sd)
+    model.to(device).eval()
+    return model
 
 
 # ═══════════════════════════════════════════════════════

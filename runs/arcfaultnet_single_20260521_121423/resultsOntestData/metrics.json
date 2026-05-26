@@ -1,0 +1,18 @@
+{
+  "accuracy": 0.7166123778501629,
+  "precision": 0.5834990059642147,
+  "recall": 0.8507246376811595,
+  "f1": 0.6922169811320755,
+  "specificity": 0.636284722216699,
+  "auc_roc": 0.8640184681964573,
+  "average_precision": 0.902988834153148,
+  "tp": 587,
+  "fp": 419,
+  "fn": 103,
+  "tn": 733,
+  "total": 1842,
+  "threshold": 0.5,
+  "model_checkpoint": "runs/arcfaultnet_single_20260521_121423/best_single.pt",
+  "data_dir": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/TestModel/prepared_data",
+  "n_params": 386321
+}

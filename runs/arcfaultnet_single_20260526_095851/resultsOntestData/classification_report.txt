@@ -1,0 +1,34 @@
+Arc-FaultNet — TestModel Evaluation
+Model     : runs/arcfaultnet_single_20260526_095851/best_single.pt
+Data      : /home/manip/pfe_salim_gouaied/Arc-Fault-Net/TestModel/prepared_data
+Threshold : 0.5
+Samples   : 1842
+
+              precision    recall  f1-score   support
+
+      Normal     0.9983    0.9905    0.9943      1152
+         Arc     0.9843    0.9971    0.9906       690
+
+    accuracy                         0.9929      1842
+   macro avg     0.9913    0.9938    0.9925      1842
+weighted avg     0.9930    0.9929    0.9930      1842
+
+Metrics JSON:
+{
+  "accuracy": 0.992942453854506,
+  "precision": 0.9842632331902719,
+  "recall": 0.9971014492753624,
+  "f1": 0.9906407487401008,
+  "specificity": 0.9904513888802913,
+  "auc_roc": 0.9949602455716586,
+  "average_precision": 0.9662815592613396,
+  "tp": 688,
+  "fp": 11,
+  "fn": 2,
+  "tn": 1141,
+  "total": 1842,
+  "threshold": 0.5,
+  "model_checkpoint": "runs/arcfaultnet_single_20260526_095851/best_single.pt",
+  "data_dir": "/home/manip/pfe_salim_gouaied/Arc-Fault-Net/TestModel/prepared_data",
+  "n_params": 320609
+}

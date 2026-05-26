@@ -1,0 +1,15 @@
+{
+  "fold_idx": 0,
+  "charge_name": "AspiRouge_SilencePosI+kettle+LampeNoire",
+  "model_name": "arcfaultnet",
+  "fold_seed": 42,
+  "n_params": 337057,
+  "epochs": 200,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "batch_size": 64,
+  "patience": 20,
+  "gradient_clip": 1.0,
+  "threshold": 0.5,
+  "use_pos_weight": false
+}
