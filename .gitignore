@@ -40,7 +40,7 @@ runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260522_114209/results.json
 
 # ── Résultats d'ablation et exports générés ─────────────
-ablation_results/
+
 exports/
 
 # ── Environnement Python ─────────────────────────────────

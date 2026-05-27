@@ -1,0 +1,135 @@
+{
+  "mode": "random",
+  "timestamp": "20260527_113021",
+  "n_repetitions": 1,
+  "epochs": 200,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "batch_size": 64,
+  "patience": 10,
+  "gradient_clip": 0.5,
+  "use_pos_weight": false,
+  "variants": {
+    "arcfaultnet": {
+      "description": "Full model (dual-branch + Joint Attention + Gabor filters)",
+      "category": "full",
+      "n_params": 344409,
+      "mean_accuracy": 0.9638036809815951,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.9607973371843932,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.9638036809815951,
+          "f1": 0.9607973371843932,
+          "precision": 0.9904109588905423,
+          "recall": 0.9329032257944141,
+          "best_epoch": 26,
+          "n_params": 344409
+        }
+      ]
+    },
+    "standard_conv": {
+      "description": "Standard Conv1d instead of ParametricConv1d (Gabor disabled)",
+      "category": "no_parametric",
+      "n_params": 514201,
+      "mean_accuracy": 0.9693251533742331,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.9667994637829294,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.9693251533742331,
+          "f1": 0.9667994637829294,
+          "precision": 0.9958960328181136,
+          "recall": 0.9393548386975566,
+          "best_epoch": 10,
+          "n_params": 514201
+        }
+      ]
+    },
+    "no_attention": {
+      "description": "Dual-branch, simple concatenation, no Joint Attention",
+      "category": "no_attention",
+      "n_params": 179705,
+      "mean_accuracy": 0.9515337423312883,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.9475779644672748,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.9515337423312883,
+          "f1": 0.9475779644672748,
+          "precision": 0.9754098360522485,
+          "recall": 0.9212903225687575,
+          "best_epoch": 28,
+          "n_params": 179705
+        }
+      ]
+    },
+    "1d_only": {
+      "description": "Only temporal branch \u2014 no STFT spectrogram",
+      "category": "no_stft",
+      "n_params": 47773,
+      "mean_accuracy": 0.5184049079754601,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.6588439764047717,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.5184049079754601,
+          "f1": 0.6588439764047717,
+          "precision": 0.4967234600229573,
+          "recall": 0.9780645161164121,
+          "best_epoch": 22,
+          "n_params": 47773
+        }
+      ]
+    },
+    "independent_cbam": {
+      "description": "CBAM per branch independently (no cross-branch guidance)",
+      "category": "no_cross",
+      "n_params": 237721,
+      "mean_accuracy": 0.9325153374233128,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.924863382982761,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.9325153374233128,
+          "f1": 0.924863382982761,
+          "precision": 0.9825834542673064,
+          "recall": 0.8735483870855026,
+          "best_epoch": 9,
+          "n_params": 237721
+        }
+      ]
+    },
+    "baseline_cnn": {
+      "description": "Simple Conv1d CNN baseline (no attention, no Gabor, no STFT)",
+      "category": "baseline",
+      "n_params": 209697,
+      "mean_accuracy": 0.9104294478527607,
+      "std_accuracy": 0.0,
+      "mean_f1": 0.8981868848388801,
+      "std_f1": 0.0,
+      "repetitions": [
+        {
+          "accuracy": 0.9104294478527607,
+          "f1": 0.8981868848388801,
+          "precision": 0.9772382397423788,
+          "recall": 0.8309677419247617,
+          "best_epoch": 19,
+          "n_params": 209697
+        }
+      ]
+    }
+  },
+  "contributions": {
+    "Gabor filters (vs standard Conv)": -0.005521472392638005,
+    "Joint Attention (vs no attention)": 0.012269938650306789,
+    "STFT branch (vs 1D only)": 0.44539877300613495,
+    "Cross-attention (vs indep. CBAM)": 0.03128834355828225,
+    "Full model vs Baseline CNN": 0.05337423312883438
+  }
+}
