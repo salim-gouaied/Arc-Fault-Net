@@ -224,6 +224,7 @@ def train_model(
     best_val_f1      = -1.0
     best_epoch       = 0
     patience_counter = 0
+    best_state_dict  = None  # Always keep best weights in memory
 
     history = {
         'train_loss': [], 'train_acc': [],
@@ -268,6 +269,8 @@ def train_model(
             best_val_f1      = val_metrics['f1']
             best_epoch       = epoch
             patience_counter = 0
+            # Always save best weights in memory
+            best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
             if best_ckpt_path:
                 torch.save(model.state_dict(), best_ckpt_path)
         else:
@@ -289,9 +292,9 @@ def train_model(
             print(f"  Early stopping at epoch {epoch} (best epoch: {best_epoch}, best_val_f1={100*best_val_f1:.2f}%)")
             break
 
-    # Reload best weights
-    if best_ckpt_path and best_ckpt_path.exists():
-        model.load_state_dict(torch.load(best_ckpt_path, map_location=device))
+    # Reload best weights (from memory — works even without checkpoint_dir)
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
 
     history['best_epoch']   = best_epoch
     history['best_val_f1']  = best_val_f1

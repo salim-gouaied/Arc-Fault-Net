@@ -760,10 +760,15 @@ class ArcFaultNet(nn.Module):
 class ArcFaultNet_1DOnly(nn.Module):
     """Ablation: Only temporal branch, no STFT."""
     
-    def __init__(self, in_channels: int = 2, use_parametric: bool = True):
+    def __init__(self, in_channels: int = 2, use_parametric: bool = True,
+                 use_se: bool = False, se_reduction: int = 8,
+                 use_amplitude: bool = False, deep_classifier: bool = False,
+                 classifier_hidden: int = 64):
         super().__init__()
-        self.branch = Branch1D(in_channels=in_channels, use_parametric=use_parametric)
-        self.classifier = ClassifierHead(in_channels=128)
+        self.branch = Branch1D(in_channels=in_channels, use_parametric=use_parametric,
+                               use_se=use_se, se_reduction=se_reduction,
+                               use_amplitude=use_amplitude)
+        self.classifier = ClassifierHead(in_channels=128, hidden_dim=classifier_hidden, deep=deep_classifier)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None) -> torch.Tensor:
         F = self.branch(x_1d)
@@ -773,12 +778,16 @@ class ArcFaultNet_1DOnly(nn.Module):
 class ArcFaultNet_NoAttention(nn.Module):
     """Ablation: Dual-branch but simple concatenation instead of attention."""
     
-    def __init__(self, in_channels: int = 2, use_parametric: bool = True):
+    def __init__(self, in_channels: int = 2, use_parametric: bool = True,
+                 use_se: bool = False, se_reduction: int = 8,
+                 use_amplitude: bool = False, deep_classifier: bool = False,
+                 classifier_hidden: int = 64):
         super().__init__()
-        self.branch_1d = Branch1D(in_channels=in_channels, use_parametric=use_parametric)
-        self.branch_2d = Branch2D(in_channels=in_channels)
+        self.branch_1d = Branch1D(in_channels=in_channels, use_parametric=use_parametric,
+                                  use_se=use_se, se_reduction=se_reduction, use_amplitude=use_amplitude)
+        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction)
         self.fusion = nn.Conv1d(256, 128, 1)
-        self.classifier = ClassifierHead(in_channels=128)
+        self.classifier = ClassifierHead(in_channels=128, hidden_dim=classifier_hidden, deep=deep_classifier)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         F_L = self.branch_1d(x_1d)
@@ -790,12 +799,20 @@ class ArcFaultNet_NoAttention(nn.Module):
 class ArcFaultNet_StandardConv(nn.Module):
     """Ablation: Standard Conv1d instead of ParametricConv1d."""
     
-    def __init__(self, in_channels: int = 2):
+    def __init__(self, in_channels: int = 2,
+                 use_se: bool = False, se_reduction: int = 8,
+                 use_amplitude: bool = False, deep_classifier: bool = False,
+                 classifier_hidden: int = 64):
         super().__init__()
         self.model = ArcFaultNet(
             in_channels=in_channels,
             use_parametric=False,
-            use_joint_attention=True
+            use_joint_attention=True,
+            use_se=use_se,
+            se_reduction=se_reduction,
+            use_amplitude=use_amplitude,
+            deep_classifier=deep_classifier,
+            classifier_hidden=classifier_hidden
         )
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
@@ -805,10 +822,13 @@ class ArcFaultNet_StandardConv(nn.Module):
 class ArcFaultNet_IndependentCBAM(nn.Module):
     """Ablation: CBAM applied independently to each branch (no cross-attention)."""
     
-    def __init__(self, in_channels: int = 2):
+    def __init__(self, in_channels: int = 2,
+                 use_se: bool = False, se_reduction: int = 8,
+                 use_amplitude: bool = False, deep_classifier: bool = False,
+                 classifier_hidden: int = 64):
         super().__init__()
-        self.branch_1d = Branch1D(in_channels=in_channels)
-        self.branch_2d = Branch2D(in_channels=in_channels)
+        self.branch_1d = Branch1D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction, use_amplitude=use_amplitude)
+        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction)
         
         # Independent attention per branch
         self.cam_1d = ChannelAttention(128)
@@ -817,7 +837,7 @@ class ArcFaultNet_IndependentCBAM(nn.Module):
         self.sam_2d = SpatialAttention(128)
         
         self.fusion = nn.Conv1d(256, 128, 1)
-        self.classifier = ClassifierHead(in_channels=128)
+        self.classifier = ClassifierHead(in_channels=128, hidden_dim=classifier_hidden, deep=deep_classifier)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         F_L = self.branch_1d(x_1d)
@@ -905,10 +925,22 @@ def get_model(
             use_amplitude=use_amplitude,
             deep_classifier=deep_classifier
         ),
-        '1d_only': lambda: ArcFaultNet_1DOnly(in_channels=in_channels),
-        'no_attention': lambda: ArcFaultNet_NoAttention(in_channels=in_channels),
-        'standard_conv': lambda: ArcFaultNet_StandardConv(in_channels=in_channels),
-        'independent_cbam': lambda: ArcFaultNet_IndependentCBAM(in_channels=in_channels),
+        '1d_only': lambda: ArcFaultNet_1DOnly(
+            in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+        ),
+        'no_attention': lambda: ArcFaultNet_NoAttention(
+            in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+        ),
+        'standard_conv': lambda: ArcFaultNet_StandardConv(
+            in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+        ),
+        'independent_cbam': lambda: ArcFaultNet_IndependentCBAM(
+            in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+        ),
         'baseline_cnn': lambda: BaselineCNN(in_channels=in_channels),
     }
     

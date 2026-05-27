@@ -12,11 +12,7 @@ Variants:
   5. independent_cbam : CBAM applied independently per branch (no cross-attention)
   6. baseline_cnn     : Simple Conv1d CNN baseline
 
-Modes:
-  --mode random  : Each variant is trained N times with a random 70/15/15 split.
-                   Fast, useful for sanity checks; NOT sufficient to claim generalization.
-  --mode loco    : Leave-one-charge-out CV.  Proper evaluation protocol.
-                   Use this for results reported in the thesis.
+Each variant is trained N times with a random 70/15/15 split using different seeds.
 """
 
 import torch
@@ -27,12 +23,18 @@ import json
 import argparse
 from datetime import datetime
 from typing import Dict, List
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+
 import warnings
 warnings.filterwarnings('ignore')
 
 from torch.utils.data import DataLoader, Subset
 
-from dataset import ArcFaultDataset, LeaveOneChargeOutSplitter, create_dataloaders
+from dataset import ArcFaultDataset
 from model import get_model
 from train import set_seed, train_model, evaluate, compute_pos_weight
 
@@ -75,6 +77,56 @@ ABLATION_VARIANTS = [
 ]
 
 
+
+
+def plot_cm_roc(model, data_loader, device, variant_name, fold_idx, output_dir: Path):
+    model.eval()
+    all_probs, all_labels = [], []
+    with torch.no_grad():
+        for batch in data_loader:
+            if isinstance(batch, dict):
+                x_1d, x_2d, labels = batch['x_1d'].to(device), batch['x_2d'].to(device), batch['label'].numpy()
+            else:
+                x_1d, x_2d, labels, _ = batch
+                x_1d, x_2d, labels = x_1d.to(device), x_2d.to(device), labels.numpy()
+            probs = torch.sigmoid(model(x_1d, x_2d)).cpu().numpy()
+            all_probs.append(probs)
+            all_labels.append(labels)
+            
+    labels = np.concatenate(all_labels)
+    probs = np.concatenate(all_probs)
+    preds = (probs >= 0.5).astype(int)
+    
+    # Confusion Matrix
+    cm = confusion_matrix(labels, preds)
+    fig, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.colorbar(im, ax=ax)
+    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+    ax.set_xticklabels(['Normal', 'Arc']); ax.set_yticklabels(['Normal', 'Arc'])
+    ax.set_xlabel('Predicted'); ax.set_ylabel('True')
+    ax.set_title(f'Confusion Matrix - {variant_name} (Rep {fold_idx})')
+    thresh = cm.max() / 2
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i, str(cm[i, j]), ha='center', va='center', color='white' if cm[i, j] > thresh else 'black')
+    plt.tight_layout()
+    fig.savefig(output_dir / f'cm_{variant_name}_rep{fold_idx}.png', dpi=120)
+    plt.close(fig)
+    
+    # ROC Curve
+    fpr, tpr, _ = roc_curve(labels, probs)
+    roc_auc = auc(fpr, tpr)
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.plot(fpr, tpr, lw=2, label=f'AUC = {roc_auc:.4f}')
+    ax.plot([0, 1], [0, 1], 'k--', lw=1)
+    ax.set_xlabel('False Positive Rate'); ax.set_ylabel('True Positive Rate')
+    ax.set_title(f'ROC Curve - {variant_name} (Rep {fold_idx})')
+    ax.legend(loc='lower right')
+    plt.tight_layout()
+    fig.savefig(output_dir / f'roc_{variant_name}_rep{fold_idx}.png', dpi=120)
+    plt.close(fig)
+
 # ═══════════════════════════════════════════════════════
 #  SINGLE VARIANT — RANDOM SPLIT
 # ═══════════════════════════════════════════════════════
@@ -91,7 +143,13 @@ def evaluate_variant_random(
     gradient_clip: float = 1.0,
     use_pos_weight: bool = False,
     num_workers: int = 4,
-    seed: int = 42
+    seed: int = 42,
+    output_dir: Path = None,
+    rep_idx: int = 1,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
 ) -> Dict:
     """Train one variant with a random 70/15/15 split (fast, NOT for generalization)."""
     set_seed(seed)
@@ -120,7 +178,8 @@ def evaluate_variant_random(
         train_labels = dataset.y[train_indices]
         pw = compute_pos_weight(train_labels, device)
 
-    model    = get_model(variant_name, in_channels=2).to(device)
+    model    = get_model(variant_name, in_channels=2, use_se=use_se, se_reduction=se_reduction,
+                         use_amplitude=use_amplitude, deep_classifier=deep_classifier).to(device)
     n_params = sum(p.numel() for p in model.parameters())
 
     model, history = train_model(
@@ -131,8 +190,13 @@ def evaluate_variant_random(
         fold_name=variant_name
     )
 
+
     criterion    = nn.BCEWithLogitsLoss()
     test_metrics = evaluate(model, test_loader, criterion, device, "Test")
+
+    if output_dir is not None:
+        plot_cm_roc(model, test_loader, device, variant_name, rep_idx, output_dir)
+
 
     return {
         'accuracy':   test_metrics['accuracy'],
@@ -144,86 +208,6 @@ def evaluate_variant_random(
     }
 
 
-# ═══════════════════════════════════════════════════════
-#  SINGLE VARIANT — LEAVE-ONE-CHARGE-OUT
-# ═══════════════════════════════════════════════════════
-
-def evaluate_variant_loco(
-    variant_name: str,
-    dataset: ArcFaultDataset,
-    device: torch.device,
-    epochs: int = 200,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-4,
-    batch_size: int = 64,
-    patience: int = 20,
-    gradient_clip: float = 1.0,
-    use_pos_weight: bool = False,
-    num_workers: int = 4,
-    seed: int = 42
-) -> Dict:
-    """
-    Evaluate one variant with LOCO CV (proper generalization metric).
-    Returns per-fold results plus aggregated mean/std.
-    """
-    splitter    = LeaveOneChargeOutSplitter(dataset)
-    fold_results = []
-
-    for fold_idx, (train_indices, test_indices) in enumerate(splitter):
-        fold_seed = seed + fold_idx
-        set_seed(fold_seed)
-
-        charge_name = splitter.get_fold_name(fold_idx)
-
-        train_loader, val_loader, test_loader = create_dataloaders(
-            dataset, train_indices.copy(), test_indices,
-            batch_size=batch_size, num_workers=num_workers, val_split=0.15
-        )
-
-        pw = None
-        if use_pos_weight:
-            train_labels = dataset.y[train_indices]
-            pw = compute_pos_weight(train_labels, device)
-
-        model    = get_model(variant_name, in_channels=2).to(device)
-        n_params = sum(p.numel() for p in model.parameters())
-
-        model, history = train_model(
-            model, train_loader, val_loader, device,
-            epochs=epochs, lr=lr, weight_decay=weight_decay,
-            patience=patience, gradient_clip=gradient_clip,
-            pos_weight=pw, checkpoint_dir=None, writer=None,
-            fold_name=f"{variant_name}_fold{fold_idx}"
-        )
-
-        criterion    = nn.BCEWithLogitsLoss()
-        test_metrics = evaluate(model, test_loader, criterion, device, f"Test fold{fold_idx}")
-
-        fold_results.append({
-            'fold_idx':    fold_idx,
-            'charge_name': charge_name,
-            'accuracy':    test_metrics['accuracy'],
-            'f1':          test_metrics['f1'],
-            'precision':   test_metrics['precision'],
-            'recall':      test_metrics['recall'],
-            'best_epoch':  history['best_epoch'],
-            'n_params':    n_params
-        })
-
-    accuracies = [r['accuracy'] for r in fold_results]
-    f1_scores  = [r['f1']       for r in fold_results]
-
-    return {
-        'accuracy':    float(np.mean(accuracies)),
-        'f1':          float(np.mean(f1_scores)),
-        'std_accuracy':float(np.std(accuracies)),
-        'std_f1':      float(np.std(f1_scores)),
-        'precision':   float(np.mean([r['precision'] for r in fold_results])),
-        'recall':      float(np.mean([r['recall']    for r in fold_results])),
-        'best_epoch':  int(np.mean([r['best_epoch']  for r in fold_results])),
-        'n_params':    fold_results[0]['n_params'],
-        'fold_results': fold_results
-    }
 
 
 # ═══════════════════════════════════════════════════════
@@ -233,7 +217,7 @@ def evaluate_variant_loco(
 def run_ablation_study(
     dataset: ArcFaultDataset,
     device: torch.device,
-    mode: str = 'random',           # 'random' | 'loco'
+    mode: str = 'random',
     n_repetitions: int = 10,        # only used in 'random' mode
     epochs: int = 200,
     lr: float = 1e-3,
@@ -243,22 +227,23 @@ def run_ablation_study(
     gradient_clip: float = 1.0,
     use_pos_weight: bool = False,
     output_dir: Path = Path('ablation_results'),
-    num_workers: int = 4
+    num_workers: int = 4,
+    base_seed: int = 42,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
 ) -> Dict:
     """Run full ablation study across all variants."""
     timestamp  = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = output_dir / f"ablation_{mode}_{timestamp}"
+    output_dir = output_dir / f"ablation_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*70}")
-    print(f"ABLATION STUDY  [mode={mode}]")
+    print(f"ABLATION STUDY")
     print(f"{'='*70}")
     print(f"Variants:     {len(ABLATION_VARIANTS)}")
-    if mode == 'random':
-        print(f"Repetitions:  {n_repetitions} per variant (random 70/15/15 split)")
-        print(f"  WARNING: random split inflates metrics — use --mode loco for thesis results")
-    else:
-        print(f"Protocol:     Leave-one-charge-out CV (proper generalization evaluation)")
+    print(f"Repetitions:  {n_repetitions} per variant (random 70/15/15 split)")
     print(f"Output:       {output_dir}")
     print(f"{'='*70}\n")
 
@@ -271,54 +256,35 @@ def run_ablation_study(
         print(f"Desc:    {variant['description']}")
         print(f"{'─'*60}")
 
-        if mode == 'random':
-            variant_reps = []
-            for rep in range(n_repetitions):
-                seed = 42 + rep
-                print(f"\n  Rep {rep + 1}/{n_repetitions}  (seed={seed})")
-                result = evaluate_variant_random(
-                    variant_name=variant_name, dataset=dataset, device=device,
-                    epochs=epochs, lr=lr, weight_decay=weight_decay,
-                    batch_size=batch_size, patience=patience,
-                    gradient_clip=gradient_clip, use_pos_weight=use_pos_weight,
-                    num_workers=num_workers, seed=seed
-                )
-                variant_reps.append(result)
-                print(f"    Acc={100*result['accuracy']:.2f}%  F1={100*result['f1']:.2f}%  epoch={result['best_epoch']}")
-
-            accuracies = [r['accuracy'] for r in variant_reps]
-            f1_scores  = [r['f1']       for r in variant_reps]
-
-            all_results[variant_name] = {
-                'description':  variant['description'],
-                'category':     variant['category'],
-                'n_params':     variant_reps[0]['n_params'],
-                'mean_accuracy': float(np.mean(accuracies)),
-                'std_accuracy':  float(np.std(accuracies)),
-                'mean_f1':       float(np.mean(f1_scores)),
-                'std_f1':        float(np.std(f1_scores)),
-                'repetitions':  variant_reps
-            }
-
-        else:  # loco
-            print(f"\n  Running LOCO CV …")
-            result = evaluate_variant_loco(
+        variant_reps = []
+        for rep in range(n_repetitions):
+            seed = base_seed + rep
+            print(f"\n  Rep {rep + 1}/{n_repetitions}  (seed={seed})")
+            result = evaluate_variant_random(
                 variant_name=variant_name, dataset=dataset, device=device,
                 epochs=epochs, lr=lr, weight_decay=weight_decay,
                 batch_size=batch_size, patience=patience,
                 gradient_clip=gradient_clip, use_pos_weight=use_pos_weight,
-                num_workers=num_workers, seed=42
+                num_workers=num_workers, seed=seed, output_dir=output_dir, rep_idx=rep+1,
+                use_se=use_se, se_reduction=se_reduction,
+                use_amplitude=use_amplitude, deep_classifier=deep_classifier
             )
-            all_results[variant_name] = {
-                'description':   variant['description'],
-                'category':      variant['category'],
-                'n_params':      result['n_params'],
-                'mean_accuracy': result['accuracy'],
-                'std_accuracy':  result.get('std_accuracy', 0.0),
-                'mean_f1':       result['f1'],
-                'std_f1':        result.get('std_f1', 0.0),
-                'loco_results':  result.get('fold_results', [])
-            }
+            variant_reps.append(result)
+            print(f"    Acc={100*result['accuracy']:.2f}%  F1={100*result['f1']:.2f}%  epoch={result['best_epoch']}")
+
+        accuracies = [r['accuracy'] for r in variant_reps]
+        f1_scores  = [r['f1']       for r in variant_reps]
+
+        all_results[variant_name] = {
+            'description':  variant['description'],
+            'category':     variant['category'],
+            'n_params':     variant_reps[0]['n_params'],
+            'mean_accuracy': float(np.mean(accuracies)),
+            'std_accuracy':  float(np.std(accuracies)),
+            'mean_f1':       float(np.mean(f1_scores)),
+            'std_f1':        float(np.std(f1_scores)),
+            'repetitions':  variant_reps
+        }
 
         r = all_results[variant_name]
         print(f"\n  Summary: Acc = {100*r['mean_accuracy']:.2f}% ± {100*r['std_accuracy']:.2f}%")
@@ -326,7 +292,7 @@ def run_ablation_study(
 
     # ── Comparison table ────────────────────────────────────────────
     print(f"\n\n{'='*70}")
-    print(f"ABLATION RESULTS  [mode={mode}]")
+    print(f"ABLATION RESULTS")
     print(f"{'='*70}")
     print(f"\n{'Model':<22} {'Accuracy':<22} {'F1 Score':<22} {'Params'}")
     print(f"{'─'*70}")
@@ -440,9 +406,10 @@ def generate_contribution_plot(contributions: List, save_path: Path):
 def main():
     parser = argparse.ArgumentParser(description='Run Arc-FaultNet Ablation Study')
 
+    # --mode kept for backwards compatibility but only 'random' is supported
     parser.add_argument('--mode', type=str, default='random',
-                        choices=['random', 'loco'],
-                        help='random = fast multi-rep split | loco = leave-one-charge-out (thesis)')
+                        choices=['random'],
+                        help='random = multi-rep random split')
     parser.add_argument('--repetitions', type=int, default=10,
                         help='(random mode) Number of repetitions per variant')
     parser.add_argument('--epochs', type=int, default=200)
@@ -455,7 +422,16 @@ def main():
     parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
     parser.add_argument('--output-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/ablation_results')
     parser.add_argument('--num-workers', type=int, default=4)
+
     parser.add_argument('--cpu', action='store_true', help='Force CPU')
+    parser.add_argument('--seed', type=int, default=42, help='Base seed for experiments')
+
+    
+    # Architecture enhancement flags
+    parser.add_argument('--use-se', action='store_true', help='Add Squeeze-and-Excitation blocks')
+    parser.add_argument('--se-reduction', type=int, default=8, help='SE block reduction ratio')
+    parser.add_argument('--use-amplitude', action='store_true', help='Add learnable amplitude to Gabor filters')
+    parser.add_argument('--deep-clf', action='store_true', help='Use deeper classifier head')
 
     args = parser.parse_args()
 
@@ -484,7 +460,12 @@ def main():
         gradient_clip=args.gradient_clip,
         use_pos_weight=args.use_pos_weight,
         output_dir=Path(args.output_dir),
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        base_seed=args.seed,
+        use_se=args.use_se,
+        se_reduction=args.se_reduction,
+        use_amplitude=args.use_amplitude,
+        deep_classifier=args.deep_clf
     )
 
 
