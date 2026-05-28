@@ -23,7 +23,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 PROJECT  = Path(__file__).parent
-RUN_DIR  = PROJECT / 'runs' / 'arcfaultnet_single_20260522_114209'
+RUN_DIR  = PROJECT / 'runs' / 'arcfaultnet_single_20260528_114322'
 CKPT     = RUN_DIR / 'best_single.pt'
 DATA_DIR = PROJECT / 'combined_dataset'
 OUT_DIR  = RUN_DIR / 'resultsOnHeldOut'
