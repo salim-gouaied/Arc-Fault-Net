@@ -21,10 +21,18 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, GroupShuffleSplit
+try:
+    from sklearn.model_selection import StratifiedGroupKFold
+    _HAS_STRATIFIED_GROUP_KFOLD = True
+except ImportError:
+    from sklearn.model_selection import GroupKFold
+    _HAS_STRATIFIED_GROUP_KFOLD = False
 
 import numpy as np
+import pandas as pd
 import random
+import re
 from pathlib import Path
 import json
 import argparse
@@ -770,6 +778,320 @@ def run_kfold_cv(
 
 
 # ═══════════════════════════════════════════════════════
+#  GROUP K-FOLD CROSS-VALIDATION (ANTI-LEAKAGE)
+# ═══════════════════════════════════════════════════════
+
+def load_group_ids(data_dir: Path, n_samples: int, group_level: str = 'recording') -> np.ndarray:
+    """
+    Derive group IDs from metadata.csv for group-based cross-validation.
+    Returns string array aligned with X_multi.npy / y.npy.
+
+    recording: each unique exp_name is a group.
+    session:   regex exp(\d+) extraction, fallback 'other'.
+    """
+    metadata_path = data_dir / 'metadata.csv'
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"metadata.csv not found at {metadata_path}")
+
+    meta = pd.read_csv(metadata_path)
+
+    if len(meta) != n_samples:
+        raise ValueError(
+            f"metadata.csv has {len(meta)} rows but dataset has {n_samples} samples. "
+            f"They must be aligned row-by-row. Aborting."
+        )
+
+    # Determine experiment name column
+    if 'exp_name' in meta.columns:
+        exp_names = meta['exp_name'].values.astype(str)
+    elif 'exp_id' in meta.columns:
+        # labeled_dataset format: combine exp_id + file_num for per-file grouping
+        exp_names = (meta['exp_id'] + '--' + meta['file_num'].astype(str).str.zfill(5)).values
+    else:
+        raise ValueError("metadata.csv must have 'exp_name' or 'exp_id' column")
+
+    if group_level == 'recording':
+        group_ids = exp_names
+    elif group_level == 'session':
+        def _extract_session(name):
+            m = re.search(r'exp(\d+)', name)
+            return m.group(0) if m else 'other'
+        group_ids = np.array([_extract_session(n) for n in exp_names])
+    else:
+        raise ValueError(f"Unknown group_level: {group_level}")
+
+    unique_groups, counts = np.unique(group_ids, return_counts=True)
+    print(f"\n  Group level '{group_level}': {len(unique_groups)} unique groups")
+    for g, c in zip(unique_groups, counts):
+        print(f"    {g}: {c} alternances")
+
+    return group_ids
+
+
+def run_groupkfold_cv(
+    model_name: str,
+    dataset: ArcFaultDataset,
+    device: torch.device,
+    group_level: str = 'recording',
+    n_folds: int = 5,
+    epochs: int = 80,
+    lr: float = 3e-4,
+    weight_decay: float = 5e-4,
+    batch_size: int = 64,
+    patience: int = 10,
+    gradient_clip: float = 0.5,
+    threshold: float = 0.5,
+    use_pos_weight: bool = False,
+    output_dir: Path = Path('runs'),
+    num_workers: int = 4,
+    seed: int = 42,
+    use_se: bool = False,
+    se_reduction: int = 8,
+    use_amplitude: bool = False,
+    deep_classifier: bool = False
+) -> Dict:
+    """
+    Group-based K-Fold cross-validation preventing data leakage.
+
+    - recording level: StratifiedGroupKFold on exp_name groups.
+      Measures generalization to unseen recordings (LOCO substitute).
+    - session level: LeaveOneGroupOut on exp11/exp12/exp13/other.
+      Measures inter-session shift.
+
+    All alternances from the same group stay in a single fold.
+    Val set is also split by group to prevent train/val leakage.
+    """
+    start_time = time.time()
+
+    data_dir = Path(dataset.data_dir)
+    group_ids = load_group_ids(data_dir, len(dataset), group_level)
+    labels = dataset.y
+    indices = np.arange(len(dataset))
+
+    # ── Choose splitter ──────────────────────────────────
+    if group_level == 'session':
+        splitter = LeaveOneGroupOut()
+        splits = list(splitter.split(indices, labels, groups=group_ids))
+        n_actual_folds = len(splits)
+        print(f"\n  LeaveOneGroupOut: {n_actual_folds} folds (--n-folds ignored)")
+    else:
+        n_unique = len(np.unique(group_ids))
+        effective_folds = min(n_folds, n_unique)
+        if effective_folds < n_folds:
+            print(f"\n  WARNING: requested {n_folds} folds but only {n_unique} groups. "
+                  f"Using {effective_folds} folds.")
+        if _HAS_STRATIFIED_GROUP_KFOLD:
+            splitter = StratifiedGroupKFold(
+                n_splits=effective_folds, shuffle=True, random_state=seed)
+        else:
+            warnings.warn(
+                "StratifiedGroupKFold unavailable; using GroupKFold (no label stratification)")
+            splitter = GroupKFold(n_splits=effective_folds)
+        splits = list(splitter.split(indices, labels, groups=group_ids))
+        n_actual_folds = len(splits)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_dir = output_dir / f"{model_name}_groupkfold_{group_level}_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    level_desc = ("unseen recordings (LOCO substitute)" if group_level == 'recording'
+                  else "inter-session shift")
+    print(f"\n{'='*60}")
+    print(f"GROUP K-FOLD CROSS-VALIDATION  (anti-leakage)")
+    print(f"Model: {model_name}  |  group_level={group_level}  |  seed={seed}")
+    print(f"Measures: {level_desc}")
+    print(f"{'='*60}")
+
+    fold_results = []
+
+    for fold_idx, (train_val_idx, test_idx) in enumerate(splits):
+        fold_seed = seed + fold_idx
+        set_seed(fold_seed)
+
+        # ── Anti-leakage: test vs train+val ──
+        test_groups = set(group_ids[test_idx])
+        train_val_groups = set(group_ids[train_val_idx])
+        assert test_groups.isdisjoint(train_val_groups), (
+            f"LEAKAGE fold {fold_idx}: groups in both train_val and test: "
+            f"{test_groups & train_val_groups}")
+
+        # ── Sub-split train_val → train + val BY GROUP (~15% groups to val) ──
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=fold_seed)
+        tv_train_sub, tv_val_sub = next(gss.split(
+            train_val_idx, labels[train_val_idx], groups=group_ids[train_val_idx]))
+        train_idx = train_val_idx[tv_train_sub]
+        val_idx = train_val_idx[tv_val_sub]
+
+        # ── Anti-leakage: pairwise disjoint ──
+        train_groups = set(group_ids[train_idx])
+        val_groups = set(group_ids[val_idx])
+        assert train_groups.isdisjoint(val_groups), (
+            f"LEAKAGE fold {fold_idx}: groups shared train↔val: "
+            f"{train_groups & val_groups}")
+        assert train_groups.isdisjoint(test_groups), (
+            f"LEAKAGE fold {fold_idx}: groups shared train↔test: "
+            f"{train_groups & test_groups}")
+        assert val_groups.isdisjoint(test_groups), (
+            f"LEAKAGE fold {fold_idx}: groups shared val↔test: "
+            f"{val_groups & test_groups}")
+
+        # ── Log fold info ──
+        train_labels = labels[train_idx]
+        val_labels = labels[val_idx]
+        test_labels = labels[test_idx]
+
+        if group_level == 'session':
+            fold_name = f"fold_{fold_idx+1}_test_{'_'.join(sorted(test_groups))}"
+        else:
+            fold_name = f"fold_{fold_idx+1}"
+
+        print(f"\n--- Fold {fold_idx+1}/{n_actual_folds}  (seed={fold_seed}) ---")
+        print(f"    Train: {len(train_idx):5d} samples ({len(train_groups):2d} groups)  "
+              f"[{int(np.sum(train_labels==0))} N / {int(np.sum(train_labels==1))} A]")
+        print(f"    Val:   {len(val_idx):5d} samples ({len(val_groups):2d} groups)  "
+              f"[{int(np.sum(val_labels==0))} N / {int(np.sum(val_labels==1))} A]")
+        print(f"    Test:  {len(test_idx):5d} samples ({len(test_groups):2d} groups)  "
+              f"[{int(np.sum(test_labels==0))} N / {int(np.sum(test_labels==1))} A]")
+        print(f"    Test groups: {sorted(test_groups)}")
+
+        # ── DataLoaders ──
+        fold_dir = run_dir / fold_name
+        fold_dir.mkdir(exist_ok=True)
+        writer = SummaryWriter(fold_dir / 'tensorboard')
+
+        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
+                                  shuffle=True, num_workers=num_workers,
+                                  pin_memory=True, drop_last=True)
+        val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size,
+                                shuffle=False, num_workers=num_workers, pin_memory=True)
+        test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size,
+                                 shuffle=False, num_workers=num_workers, pin_memory=True)
+
+        # ── pos_weight from train labels only ──
+        pw = None
+        if use_pos_weight:
+            pw = compute_pos_weight(train_labels, device)
+            print(f"    pos_weight = {pw.item():.3f}")
+
+        # ── Model ──
+        model = get_model(model_name, in_channels=2,
+                          use_se=use_se, se_reduction=se_reduction,
+                          use_amplitude=use_amplitude,
+                          deep_classifier=deep_classifier).to(device)
+
+        if fold_idx == 0:
+            print(f"    Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+        # ── Train ──
+        model, history = train_model(
+            model, train_loader, val_loader, device,
+            epochs=epochs, lr=lr, weight_decay=weight_decay,
+            patience=patience, gradient_clip=gradient_clip,
+            threshold=threshold, pos_weight=pw,
+            checkpoint_dir=fold_dir, writer=writer,
+            fold_name=fold_name
+        )
+
+        # ── Evaluate on held-out test groups ──
+        criterion = nn.BCEWithLogitsLoss()
+        test_metrics = evaluate(model, test_loader, criterion, device,
+                                f"Fold {fold_idx+1} Test", threshold)
+        writer.close()
+
+        print(f"    → Acc={100*test_metrics['accuracy']:.2f}%  "
+              f"F1={100*test_metrics['f1']:.2f}%  "
+              f"Prec={100*test_metrics['precision']:.2f}%  "
+              f"Rec={100*test_metrics['recall']:.2f}%  "
+              f"Spec={100*test_metrics['specificity']:.2f}%")
+
+        fold_result = {
+            'fold': fold_idx + 1,
+            'fold_name': fold_name,
+            'seed': fold_seed,
+            'n_train': len(train_idx),
+            'n_val': len(val_idx),
+            'n_test': len(test_idx),
+            'n_groups_train': len(train_groups),
+            'n_groups_val': len(val_groups),
+            'n_groups_test': len(test_groups),
+            'test_groups': sorted(test_groups),
+            'best_epoch': history['best_epoch'],
+            'test_accuracy': float(test_metrics['accuracy']),
+            'test_f1': float(test_metrics['f1']),
+            'test_precision': float(test_metrics['precision']),
+            'test_recall': float(test_metrics['recall']),
+            'test_specificity': float(test_metrics['specificity']),
+            'test_tp': test_metrics['tp'], 'test_fp': test_metrics['fp'],
+            'test_fn': test_metrics['fn'], 'test_tn': test_metrics['tn'],
+        }
+        fold_results.append(fold_result)
+
+        # Per-fold config
+        fold_config = {
+            'fold': fold_idx + 1, 'fold_name': fold_name,
+            'model_name': model_name, 'group_level': group_level,
+            'n_folds': n_actual_folds, 'global_seed': seed,
+            'fold_seed': fold_seed,
+            'epochs': epochs, 'lr': lr, 'weight_decay': weight_decay,
+            'batch_size': batch_size, 'patience': patience,
+            'gradient_clip': gradient_clip, 'threshold': threshold,
+            'use_pos_weight': use_pos_weight,
+        }
+        with open(fold_dir / 'config.json', 'w') as f:
+            json.dump(fold_config, f, indent=2)
+
+    # ── Summary across folds ─────────────────────────────
+    if not fold_results:
+        print("No folds were run.")
+        return {}
+
+    metrics_keys = ['test_accuracy', 'test_f1', 'test_precision', 'test_recall', 'test_specificity']
+    summary = {}
+
+    print(f"\n{'='*60}")
+    print(f"GROUP K-FOLD SUMMARY  ({n_actual_folds} folds, group_level={group_level})")
+    print(f"{'='*60}")
+
+    for m in metrics_keys:
+        vals = np.array([r[m] for r in fold_results])
+        mean, std = vals.mean(), vals.std()
+        label = m.replace('test_', '').capitalize()
+        print(f"  {label:12s}: {100*mean:.2f}% ± {100*std:.2f}%")
+        summary[f'{m}_mean'] = float(mean)
+        summary[f'{m}_std'] = float(std)
+
+    print(f"\n  Interpretation:")
+    if group_level == 'recording':
+        print(f"    group-level=recording measures generalization to NEW RECORDINGS")
+        print(f"    (substitute for leave-one-charge-out when charge info is unavailable)")
+    else:
+        print(f"    group-level=session measures INTER-SESSION shift")
+        print(f"    (exp11=8 juil, exp12=15 juil, exp13=22 juil, other=OthmaneSalim)")
+
+    duration = time.time() - start_time
+    summary.update({
+        'model_name': model_name,
+        'group_level': group_level,
+        'n_folds': n_actual_folds,
+        'seed': seed,
+        'timestamp': timestamp,
+        'epochs': epochs, 'lr': lr, 'weight_decay': weight_decay,
+        'batch_size': batch_size, 'patience': patience,
+        'gradient_clip': gradient_clip, 'threshold': threshold,
+        'use_pos_weight': use_pos_weight,
+        'fold_results': fold_results,
+        'training_duration_seconds': duration,
+    })
+
+    with open(run_dir / 'groupkfold_summary.json', 'w') as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\n  Duration: {duration/60:.1f} min")
+    print(f"  Results saved to: {run_dir}")
+    return summary
+
+
+# ═══════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════
 
@@ -781,12 +1103,15 @@ def main():
                                  'standard_conv', 'independent_cbam', 'baseline_cnn'],
                         help='Model to train')
     parser.add_argument('--mode', type=str, default='single',
-                        choices=['cv', 'single', 'kfold'],
-                        help='cv = leave-one-charge-out | single = random split | kfold = stratified K-fold')
+                        choices=['cv', 'single', 'kfold', 'groupkfold'],
+                        help='cv = leave-one-charge-out | single = random split | kfold = stratified K-fold | groupkfold = group-based K-fold')
     parser.add_argument('--fold', type=int, default=None,
                         help='(cv mode) Run only this fold index (0-based)')
     parser.add_argument('--n-folds', type=int, default=5,
-                        help='(kfold mode) Number of folds (default: 5)')
+                        help='(kfold/groupkfold mode) Number of folds (default: 5)')
+    parser.add_argument('--group-level', type=str, default='recording',
+                        choices=['recording', 'session'],
+                        help='(groupkfold mode) Group level for splits (default: recording)')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
@@ -857,6 +1182,29 @@ def main():
             model_name=args.model,
             dataset=dataset,
             device=device,
+            n_folds=args.n_folds,
+            epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            batch_size=args.batch_size,
+            patience=args.patience,
+            gradient_clip=args.gradient_clip,
+            threshold=args.threshold,
+            use_pos_weight=args.use_pos_weight,
+            output_dir=output_dir,
+            num_workers=args.num_workers,
+            seed=args.seed,
+            use_se=args.use_se,
+            se_reduction=args.se_reduction,
+            use_amplitude=args.use_amplitude,
+            deep_classifier=args.deep_clf
+        )
+    elif args.mode == 'groupkfold':
+        run_groupkfold_cv(
+            model_name=args.model,
+            dataset=dataset,
+            device=device,
+            group_level=args.group_level,
             n_folds=args.n_folds,
             epochs=args.epochs,
             lr=args.lr,

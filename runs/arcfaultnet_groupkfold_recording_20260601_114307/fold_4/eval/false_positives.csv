@@ -1,0 +1,8 @@
+dataset_index,prob,source_dir,exp_id,file_num,alt_index,arc_ratio
+10398,0.9292929172515869,OthmaneSalim10052026,GraphAcier_Kettle+SilenceI+3lampes,,97,0.0
+9436,0.9243279695510864,OthmaneSalim10052026,GraphAcier_Kettle+Halogene+SilenceI,,98,0.0
+9464,0.8373297452926636,OthmaneSalim10052026,GraphAcier_Kettle+Halogene+SilenceI,,50,0.0032
+10117,0.7679054141044617,OthmaneSalim10052026,GraphAcier_Kettle+Halogene+AspiRouge+perceuse,,97,0.0
+9576,0.7418175339698792,OthmaneSalim10052026,AcierCu_kettlebis,,46,0.0103
+10781,0.5314360857009888,OthmaneSalim10052026,AcierCu_R,,22,0.00565
+10791,0.5241384506225586,OthmaneSalim10052026,GraphAcier_Kettle+Halogene+SilenceI,,97,0.0

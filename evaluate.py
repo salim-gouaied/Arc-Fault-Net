@@ -29,11 +29,19 @@ from sklearn.metrics import (
     confusion_matrix, classification_report, roc_curve, auc,
     precision_recall_curve, average_precision_score
 )
+from sklearn.model_selection import LeaveOneGroupOut, GroupShuffleSplit
+try:
+    from sklearn.model_selection import StratifiedGroupKFold
+    _HAS_STRATIFIED_GROUP_KFOLD = True
+except ImportError:
+    from sklearn.model_selection import GroupKFold
+    _HAS_STRATIFIED_GROUP_KFOLD = False
 import warnings
 warnings.filterwarnings('ignore')
 
 from dataset import ArcFaultDataset
 from model import get_model
+from train import load_group_ids
 
 
 # ═══════════════════════════════════════════════════════
@@ -47,6 +55,17 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def normalize_metadata(meta: pd.DataFrame) -> pd.DataFrame:
+    """Normalize metadata columns for combined_dataset compatibility."""
+    meta = meta.copy()
+    if 'source_dir' not in meta.columns:
+        meta['source_dir'] = meta.get('dataset', '')
+    if 'exp_id' not in meta.columns:
+        meta['exp_id'] = meta.get('exp_name', '')
+    if 'file_num' not in meta.columns:
+        meta['file_num'] = ''
+    return meta
 
 
 # ═══════════════════════════════════════════════════════
@@ -1238,6 +1257,270 @@ def plot_varc_verification(
 
 
 # ═══════════════════════════════════════════════════════
+#  GROUPKFOLD EVALUATION
+# ═══════════════════════════════════════════════════════
+
+def plot_overlaid_roc_curves(roc_data, save_path):
+    """Plot one ROC curve per fold + mean on a single figure."""
+    fig, ax = plt.subplots(figsize=(9, 7))
+    fig.patch.set_facecolor('#fafafa')
+    colors = plt.cm.Set2(np.linspace(0, 1, max(len(roc_data), 8)))
+
+    for i, (fpr, tpr, auc_val, name) in enumerate(roc_data):
+        ax.plot(fpr, tpr, color=colors[i], lw=1.8, alpha=0.75,
+                label=f'{name} (AUC={auc_val:.3f})')
+
+    ax.plot([0, 1], [0, 1], 'k--', lw=1.5, alpha=0.4)
+    ax.set_xlabel('False Positive Rate', fontsize=13)
+    ax.set_ylabel('True Positive Rate', fontsize=13)
+    ax.set_title('ROC Curves — All Folds', fontsize=15, fontweight='bold')
+    ax.legend(fontsize=10, loc='lower right')
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight', facecolor='#fafafa')
+    plt.close()
+
+
+def plot_crossfold_bar(fold_metrics_list, save_path):
+    """Bar chart: per-fold accuracy/F1/precision/recall with mean±std."""
+    metric_keys = ['accuracy', 'f1', 'precision', 'recall', 'specificity']
+    n_folds = len(fold_metrics_list)
+    n_metrics = len(metric_keys)
+
+    fig, ax = plt.subplots(figsize=(max(10, n_folds * 2.5), 7))
+    fig.patch.set_facecolor('#fafafa')
+    x = np.arange(n_folds)
+    width = 0.15
+    colors_m = ['#2196F3', '#FF5722', '#FF9800', '#00BCD4', '#9C27B0']
+
+    for mi, key in enumerate(metric_keys):
+        vals = [m[key] * 100 for m in fold_metrics_list]
+        offset = (mi - n_metrics / 2 + 0.5) * width
+        bars = ax.bar(x + offset, vals, width, label=key.capitalize(),
+                      color=colors_m[mi], alpha=0.85, edgecolor='white')
+        mean_val = np.mean(vals)
+        ax.axhline(y=mean_val, color=colors_m[mi], ls=':', lw=1, alpha=0.5)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'Fold {i+1}' for i in range(n_folds)], fontsize=12)
+    ax.set_ylabel('Score (%)', fontsize=13)
+    ax.set_title('Per-Fold Metrics', fontsize=15, fontweight='bold')
+    ax.legend(fontsize=10, loc='lower right')
+    ax.grid(True, alpha=0.3, linestyle='--', axis='y')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_ylim([0, 105])
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight', facecolor='#fafafa')
+    plt.close()
+
+
+def evaluate_groupkfold_run(
+    run_dir: Path,
+    dataset: ArcFaultDataset,
+    metadata: pd.DataFrame,
+    device: torch.device,
+    model_name: str = 'arcfaultnet',
+    threshold: float = 0.5
+) -> Dict:
+    """Evaluate all folds from a groupkfold training run."""
+    fold_dirs = sorted([d for d in run_dir.iterdir()
+                        if d.is_dir() and d.name.startswith('fold_')])
+    if not fold_dirs:
+        print("ERROR: No fold directories found in", run_dir)
+        return {}
+
+    # Read first config for common params
+    first_config = None
+    for fd in fold_dirs:
+        cfg = fd / 'config.json'
+        if cfg.exists():
+            with open(cfg) as f:
+                first_config = json.load(f)
+            break
+    if first_config is None:
+        print("ERROR: No config.json found in any fold directory")
+        return {}
+
+    group_level = first_config['group_level']
+    first_fold_idx = first_config['fold'] - 1
+    global_seed = first_config.get('global_seed', first_config['fold_seed'] - first_fold_idx)
+    n_folds = first_config.get('n_folds', len(fold_dirs))
+
+    print(f"\n{'='*60}")
+    print(f"GROUPKFOLD EVALUATION")
+    print(f"Run: {run_dir.name}")
+    print(f"group_level={group_level}  |  seed={global_seed}  |  n_folds={n_folds}")
+    print(f"{'='*60}")
+
+    # Recreate splits (same logic as train.py)
+    data_dir = Path(dataset.data_dir)
+    group_ids = load_group_ids(data_dir, len(dataset), group_level)
+    labels_all = dataset.y
+    indices = np.arange(len(dataset))
+
+    if group_level == 'session':
+        splitter = LeaveOneGroupOut()
+    else:
+        if _HAS_STRATIFIED_GROUP_KFOLD:
+            splitter = StratifiedGroupKFold(
+                n_splits=n_folds, shuffle=True, random_state=global_seed)
+        else:
+            splitter = GroupKFold(n_splits=n_folds)
+    splits = list(splitter.split(indices, labels_all, groups=group_ids))
+
+    eval_dir = run_dir / 'eval'
+    eval_dir.mkdir(exist_ok=True)
+
+    all_metrics = []
+    roc_curves = []
+    concat_labels = []
+    concat_probs = []
+
+    for fold_dir in fold_dirs:
+        cfg_path = fold_dir / 'config.json'
+        if not cfg_path.exists():
+            print(f"\n  Skipping {fold_dir.name}: no config.json")
+            continue
+        with open(cfg_path) as f:
+            fc = json.load(f)
+
+        fold_idx = fc['fold'] - 1
+        fold_seed = fc['fold_seed']
+        fold_name = fc['fold_name']
+
+        best_ckpts = sorted(fold_dir.glob('best_*.pt'))
+        if not best_ckpts:
+            print(f"\n  Skipping {fold_dir.name}: no checkpoint")
+            continue
+        if fold_idx >= len(splits):
+            print(f"\n  ERROR: fold {fold_idx} >= n_splits {len(splits)}")
+            continue
+
+        train_val_idx, test_idx = splits[fold_idx]
+
+        print(f"\n--- Evaluating {fold_name} ({len(test_idx)} test samples) ---")
+
+        # Load model
+        model = get_model(model_name, in_channels=2).to(device)
+        model.load_state_dict(torch.load(best_ckpts[0], map_location=device))
+        model.eval()
+
+        fold_labels, fold_probs = get_predictions(model, dataset, test_idx, device)
+        fm = compute_metrics(fold_labels, fold_probs, threshold)
+
+        print(f"    Acc={100*fm['accuracy']:.2f}%  F1={100*fm['f1']:.2f}%  "
+              f"Prec={100*fm['precision']:.2f}%  Rec={100*fm['recall']:.2f}%  "
+              f"AUC={fm['auc_roc']:.4f}")
+
+        all_metrics.append(fm)
+        concat_labels.append(fold_labels)
+        concat_probs.append(fold_probs)
+
+        fpr, tpr, _ = roc_curve(fold_labels, fold_probs)
+        roc_curves.append((fpr, tpr, fm['auc_roc'], fold_name))
+
+        # Per-fold plots
+        fold_eval = fold_dir / 'eval'
+        fold_eval.mkdir(exist_ok=True)
+        preds = (fold_probs > threshold).astype(int)
+        plot_confusion_matrix(fold_labels, preds, fold_eval / 'confusion_matrix.png',
+                              title=f"Confusion Matrix — {fold_name}")
+        plot_roc_curve(fold_labels, fold_probs, fold_eval / 'roc_curve.png',
+                       title=f"ROC — {fold_name}")
+        plot_precision_recall_curve(fold_labels, fold_probs, fold_eval / 'pr_curve.png',
+                                    title=f"PR — {fold_name}")
+        plot_score_distribution(fold_labels, fold_probs, fold_eval, threshold)
+
+        # Training curves if history exists
+        hist_files = sorted(fold_dir.glob('history_*.json'))
+        if hist_files:
+            plot_training_curves(hist_files[0], fold_eval)
+
+        # FN/FP analysis (with normalized metadata column names)
+        analyse_false_negatives(dataset, test_idx, fold_probs, fold_labels,
+                                metadata, fold_eval, threshold, n_plot=8)
+        analyse_false_positives(dataset, test_idx, fold_probs, fold_labels,
+                                metadata, fold_eval, threshold, n_plot=8)
+
+        del model  # free GPU memory
+
+    if not all_metrics:
+        print("\nNo folds evaluated successfully.")
+        return {}
+
+    # ── Aggregated outputs ─────────────────────────────────
+    print(f"\n{'='*60}")
+    print(f"AGGREGATED RESULTS ({len(all_metrics)} folds)")
+    print(f"{'='*60}")
+
+    # Combined confusion matrix (concatenated predictions)
+    cat_labels = np.concatenate(concat_labels)
+    cat_probs = np.concatenate(concat_probs)
+    cat_preds = (cat_probs > threshold).astype(int)
+
+    agg_metrics = compute_metrics(cat_labels, cat_probs, threshold)
+    print(f"  Pooled Accuracy:  {100*agg_metrics['accuracy']:.2f}%")
+    print(f"  Pooled F1:        {100*agg_metrics['f1']:.2f}%")
+    print(f"  Pooled AUC-ROC:   {agg_metrics['auc_roc']:.4f}")
+
+    # Mean ± std per metric
+    metric_keys = ['accuracy', 'f1', 'precision', 'recall', 'specificity', 'auc_roc']
+    summary_stats = {}
+    print(f"\n  Per-fold mean ± std:")
+    for k in metric_keys:
+        vals = np.array([m[k] for m in all_metrics])
+        mean, std = vals.mean(), vals.std()
+        label = k.replace('_', ' ').capitalize()
+        pct = k != 'auc_roc'
+        if pct:
+            print(f"    {label:14s}: {100*mean:.2f}% ± {100*std:.2f}%")
+        else:
+            print(f"    {label:14s}: {mean:.4f} ± {std:.4f}")
+        summary_stats[f'{k}_mean'] = float(mean)
+        summary_stats[f'{k}_std'] = float(std)
+
+    # Aggregated plots
+    plot_confusion_matrix(cat_labels, cat_preds, eval_dir / 'confusion_matrix_combined.png',
+                          title=f"Combined Confusion Matrix ({len(all_metrics)} folds)")
+    print(f"\n  Saved → confusion_matrix_combined.png")
+
+    plot_overlaid_roc_curves(roc_curves, eval_dir / 'roc_curves_all_folds.png')
+    print(f"  Saved → roc_curves_all_folds.png")
+
+    plot_crossfold_bar(all_metrics, eval_dir / 'crossfold_metrics.png')
+    print(f"  Saved → crossfold_metrics.png")
+
+    plot_score_distribution(cat_labels, cat_probs, eval_dir, threshold)
+    plot_threshold_analysis(cat_labels, cat_probs, eval_dir)
+    plot_calibration_curve(cat_labels, cat_probs, eval_dir)
+    plot_confidence_distribution(cat_labels, cat_probs, eval_dir, threshold)
+
+    # Save JSON
+    results = {
+        'run_dir': str(run_dir),
+        'group_level': group_level,
+        'n_folds': len(all_metrics),
+        'global_seed': global_seed,
+        'threshold': threshold,
+        'pooled_metrics': agg_metrics,
+        'per_fold_summary': summary_stats,
+        'per_fold_metrics': [
+            {k: float(v) if isinstance(v, (float, np.floating)) else v
+             for k, v in m.items()}
+            for m in all_metrics
+        ],
+    }
+    with open(eval_dir / 'evaluation_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+
+    print(f"\n  All outputs saved to: {eval_dir}")
+    return results
+
+
+# ═══════════════════════════════════════════════════════
 #  MAIN EVALUATION
 # ═══════════════════════════════════════════════════════
 
@@ -1362,8 +1645,10 @@ def evaluate_model(
 def main():
     parser = argparse.ArgumentParser(description='Evaluate Arc-FaultNet')
 
-    parser.add_argument('--model-path', type=str, required=True,
-                        help='Path to model checkpoint (.pt)')
+    parser.add_argument('--model-path', type=str, default=None,
+                        help='Path to model checkpoint (.pt) [single mode]')
+    parser.add_argument('--run-dir', type=str, default=None,
+                        help='Path to a groupkfold run directory (evaluates all folds)')
     parser.add_argument('--model', type=str, default='arcfaultnet',
                         choices=['arcfaultnet', '1d_only', 'no_attention',
                                  'standard_conv', 'independent_cbam', 'baseline_cnn'],
@@ -1392,32 +1677,51 @@ def main():
     # Load dataset
     dataset = ArcFaultDataset(data_dir=args.data_dir)
 
-    # Load metadata
+    # Load metadata and normalize columns for combined_dataset compatibility
     meta_path = Path(args.data_dir) / 'metadata.csv'
     if not meta_path.exists():
         print(f"ERROR: metadata.csv not found at {meta_path}")
         return
-    metadata = pd.read_csv(meta_path)
+    metadata = normalize_metadata(pd.read_csv(meta_path))
     print(f"Metadata loaded: {len(metadata)} rows")
 
-    # Output directory
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        output_dir = Path(args.model_path).parent / 'eval'
+    # ── Dispatch ─────────────────────────────────────────────
+    if args.run_dir:
+        # GroupKFold evaluation
+        run_dir = Path(args.run_dir)
+        if not run_dir.exists():
+            print(f"ERROR: run directory not found: {run_dir}")
+            return
+        evaluate_groupkfold_run(
+            run_dir=run_dir,
+            dataset=dataset,
+            metadata=metadata,
+            device=device,
+            model_name=args.model,
+            threshold=args.threshold,
+        )
+    elif args.model_path:
+        # Single-model evaluation (existing behavior)
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+        else:
+            output_dir = Path(args.model_path).parent / 'eval'
 
-    evaluate_model(
-        model_path=Path(args.model_path),
-        model_name=args.model,
-        dataset=dataset,
-        metadata=metadata,
-        device=device,
-        output_dir=output_dir,
-        seed=args.seed,
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        threshold=args.threshold,
-    )
+        evaluate_model(
+            model_path=Path(args.model_path),
+            model_name=args.model,
+            dataset=dataset,
+            metadata=metadata,
+            device=device,
+            output_dir=output_dir,
+            seed=args.seed,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            threshold=args.threshold,
+        )
+    else:
+        print("ERROR: provide either --model-path or --run-dir")
+        parser.print_help()
 
 
 if __name__ == '__main__':
