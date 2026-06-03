@@ -167,14 +167,24 @@ def plot_training_curves(history_path, out_dir):
 # ─────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description='Quick evaluation from a run directory. '
+                    'Auto-reads results.json for seed, data-dir, n-fft, etc.')
     parser.add_argument('--run', required=True, help='Path to run directory')
-    parser.add_argument('--data-dir', default='labeled_dataset')
+    # All below are OPTIONAL — auto-detected from results.json if present
+    parser.add_argument('--data-dir', default=None,
+                        help='Override dataset path (auto-detected from results.json)')
     parser.add_argument('--checkpoint', default='best_single.pt')
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Override seed (auto-detected from results.json)')
     parser.add_argument('--train-ratio', type=float, default=0.7)
     parser.add_argument('--val-ratio', type=float, default=0.15)
-    parser.add_argument('--threshold', type=float, default=0.5)
+    parser.add_argument('--threshold', type=float, default=None,
+                        help='Override threshold (auto-detected from results.json)')
+    parser.add_argument('--n-fft', type=int, default=None,
+                        help='Override n_fft (auto-detected from results.json)')
+    parser.add_argument('--hop-length', type=int, default=None,
+                        help='Override hop_length (auto-detected from results.json)')
     args = parser.parse_args()
 
     run_dir  = Path(args.run)
@@ -182,34 +192,53 @@ def main():
     out_dir  = run_dir / 'eval'
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Auto-detect config from results.json ─────────────────────
+    cfg = {}
+    results_path = run_dir / 'results.json'
+    if results_path.exists():
+        with open(results_path) as f:
+            cfg = json.load(f)
+        print(f"  Auto-loaded config from results.json")
+    else:
+        print(f"  WARNING: No results.json found, using CLI args / defaults")
+
+    # Resolve each parameter: CLI override > results.json > safe default
+    seed       = args.seed       if args.seed       is not None else cfg.get('seed', cfg.get('global_seed', 42))
+    threshold  = args.threshold  if args.threshold  is not None else cfg.get('threshold', 0.5)
+    n_fft      = args.n_fft      if args.n_fft      is not None else cfg.get('n_fft', 512)
+    hop_length = args.hop_length if args.hop_length is not None else cfg.get('hop_length', 256)
+    data_dir   = args.data_dir   if args.data_dir   is not None else cfg.get('data_dir', 'labeled_dataset')
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\n{'='*55}")
     print(f"  mini_evaluate — {run_dir.name}")
-    print(f"  Device: {device}  |  Threshold: {args.threshold}")
+    print(f"  Device: {device}  |  Threshold: {threshold}")
+    print(f"  Config: seed={seed}  n_fft={n_fft}  hop={hop_length}")
+    print(f"  Data:   {data_dir}")
     print(f"{'='*55}")
 
-    # Build model
-    print("\n[1/4] Building model from checkpoint …")
-    model = build_model_from_checkpoint(ckpt, device)
-    n = sum(p.numel() for p in model.parameters())
-    print(f"  Parameters: {n:,}")
-
-    # Dataset + split
-    print("\n[2/4] Loading dataset …")
-    ds = ArcFaultDataset(data_dir=args.data_dir)
+    # Dataset + split (loaded first so we can auto-detect fs)
+    print("\n[1/4] Loading dataset …")
+    ds = ArcFaultDataset(data_dir=data_dir, n_fft=n_fft, hop_length=hop_length)
     import random
-    random.seed(args.seed); np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    random.seed(seed); np.random.seed(seed)
+    torch.manual_seed(seed)
     idx = np.random.permutation(len(ds))
     n_tr = int(len(ds) * args.train_ratio)
     n_vl = int(len(ds) * args.val_ratio)
     test_idx = idx[n_tr + n_vl:]
     print(f"  Test set: {len(test_idx)} samples")
 
+    # Build model (using fs from the dataset)
+    print("\n[2/4] Building model from checkpoint …")
+    model = build_model_from_checkpoint(ckpt, device, fs=ds.fs, n_fft=n_fft)
+    n = sum(p.numel() for p in model.parameters())
+    print(f"  Parameters: {n:,}")
+
     # Inference
     print("\n[3/4] Running inference …")
     labels, probs = get_predictions(model, ds, test_idx, device)
-    preds = (probs >= args.threshold).astype(int)
+    preds = (probs >= threshold).astype(int)
 
     # Metrics
     acc  = accuracy_score(labels, preds)
@@ -236,7 +265,7 @@ def main():
 
     # Plots
     print("\n[4/4] Generating plots …")
-    plot_confusion_matrix(labels, probs, args.threshold, out_dir)
+    plot_confusion_matrix(labels, probs, threshold, out_dir)
     plot_roc(labels, probs, out_dir)
 
     hist = run_dir / 'history_single.json'
@@ -254,3 +283,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

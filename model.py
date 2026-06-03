@@ -212,7 +212,8 @@ class Branch1D(nn.Module):
         use_parametric: bool = True,
         use_se: bool = False,
         se_reduction: int = 8,
-        use_amplitude: bool = False
+        use_amplitude: bool = False,
+        fs: float = 1_000_000
     ):
         super().__init__()
         
@@ -228,6 +229,7 @@ class Branch1D(nn.Module):
                     dims[i], dims[i+1],
                     kernel_size=kernel_sizes[i],
                     padding=kernel_sizes[i] // 2,
+                    fs=fs,
                     use_amplitude=use_amplitude
                 )
             else:
@@ -640,7 +642,9 @@ class ArcFaultNet(nn.Module):
         se_reduction: int = 8,
         use_amplitude: bool = False,
         deep_classifier: bool = False,
-        classifier_hidden: int = 64
+        classifier_hidden: int = 64,
+        fs: float = 1_000_000,
+        n_fft: int = 512
     ):
         super().__init__()
         
@@ -654,7 +658,8 @@ class ArcFaultNet(nn.Module):
             use_parametric=use_parametric,
             use_se=use_se,
             se_reduction=se_reduction,
-            use_amplitude=use_amplitude
+            use_amplitude=use_amplitude,
+            fs=fs
         )
         
         # Branch 2D - Spectral
@@ -662,6 +667,8 @@ class ArcFaultNet(nn.Module):
             in_channels=in_channels,
             hidden_dims=hidden_dims,
             output_dim=output_dim,
+            fs=fs,
+            n_fft=n_fft,
             use_se=use_se,
             se_reduction=se_reduction
         )
@@ -763,11 +770,11 @@ class ArcFaultNet_1DOnly(nn.Module):
     def __init__(self, in_channels: int = 2, use_parametric: bool = True,
                  use_se: bool = False, se_reduction: int = 8,
                  use_amplitude: bool = False, deep_classifier: bool = False,
-                 classifier_hidden: int = 64):
+                 classifier_hidden: int = 64, fs: float = 1_000_000):
         super().__init__()
         self.branch = Branch1D(in_channels=in_channels, use_parametric=use_parametric,
                                use_se=use_se, se_reduction=se_reduction,
-                               use_amplitude=use_amplitude)
+                               use_amplitude=use_amplitude, fs=fs)
         self.classifier = ClassifierHead(in_channels=128, hidden_dim=classifier_hidden, deep=deep_classifier)
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None) -> torch.Tensor:
@@ -781,11 +788,14 @@ class ArcFaultNet_NoAttention(nn.Module):
     def __init__(self, in_channels: int = 2, use_parametric: bool = True,
                  use_se: bool = False, se_reduction: int = 8,
                  use_amplitude: bool = False, deep_classifier: bool = False,
-                 classifier_hidden: int = 64):
+                 classifier_hidden: int = 64, fs: float = 1_000_000,
+                 n_fft: int = 512):
         super().__init__()
         self.branch_1d = Branch1D(in_channels=in_channels, use_parametric=use_parametric,
-                                  use_se=use_se, se_reduction=se_reduction, use_amplitude=use_amplitude)
-        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction)
+                                  use_se=use_se, se_reduction=se_reduction,
+                                  use_amplitude=use_amplitude, fs=fs)
+        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se,
+                                  se_reduction=se_reduction, fs=fs, n_fft=n_fft)
         self.fusion = nn.Conv1d(256, 128, 1)
         self.classifier = ClassifierHead(in_channels=128, hidden_dim=classifier_hidden, deep=deep_classifier)
     
@@ -802,7 +812,8 @@ class ArcFaultNet_StandardConv(nn.Module):
     def __init__(self, in_channels: int = 2,
                  use_se: bool = False, se_reduction: int = 8,
                  use_amplitude: bool = False, deep_classifier: bool = False,
-                 classifier_hidden: int = 64):
+                 classifier_hidden: int = 64, fs: float = 1_000_000,
+                 n_fft: int = 512):
         super().__init__()
         self.model = ArcFaultNet(
             in_channels=in_channels,
@@ -812,7 +823,9 @@ class ArcFaultNet_StandardConv(nn.Module):
             se_reduction=se_reduction,
             use_amplitude=use_amplitude,
             deep_classifier=deep_classifier,
-            classifier_hidden=classifier_hidden
+            classifier_hidden=classifier_hidden,
+            fs=fs,
+            n_fft=n_fft
         )
     
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
@@ -825,10 +838,13 @@ class ArcFaultNet_IndependentCBAM(nn.Module):
     def __init__(self, in_channels: int = 2,
                  use_se: bool = False, se_reduction: int = 8,
                  use_amplitude: bool = False, deep_classifier: bool = False,
-                 classifier_hidden: int = 64):
+                 classifier_hidden: int = 64, fs: float = 1_000_000,
+                 n_fft: int = 512):
         super().__init__()
-        self.branch_1d = Branch1D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction, use_amplitude=use_amplitude)
-        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction)
+        self.branch_1d = Branch1D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+                                  use_amplitude=use_amplitude, fs=fs)
+        self.branch_2d = Branch2D(in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
+                                  fs=fs, n_fft=n_fft)
         
         # Independent attention per branch
         self.cam_1d = ChannelAttention(128)
@@ -899,7 +915,9 @@ def get_model(
     use_se: bool = False,
     se_reduction: int = 8,
     use_amplitude: bool = False,
-    deep_classifier: bool = False
+    deep_classifier: bool = False,
+    fs: float = 1_000_000,
+    n_fft: int = 512
 ) -> nn.Module:
     """
     Factory function to get model by name.
@@ -916,6 +934,10 @@ def get_model(
       - use_se: Add Squeeze-and-Excitation blocks after each conv layer
       - use_amplitude: Add learnable amplitude to Gabor filters
       - deep_classifier: Use deeper classifier head with BatchNorm
+    
+    Signal parameters:
+      - fs: Sampling frequency in Hz (default 1 MHz, use 102400 for decimated)
+      - n_fft: FFT size for the 2D spectral branch
     """
     models = {
         'arcfaultnet': lambda: ArcFaultNet(
@@ -923,23 +945,29 @@ def get_model(
             use_se=use_se,
             se_reduction=se_reduction,
             use_amplitude=use_amplitude,
-            deep_classifier=deep_classifier
+            deep_classifier=deep_classifier,
+            fs=fs,
+            n_fft=n_fft
         ),
         '1d_only': lambda: ArcFaultNet_1DOnly(
             in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
-            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier,
+            fs=fs
         ),
         'no_attention': lambda: ArcFaultNet_NoAttention(
             in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
-            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier,
+            fs=fs, n_fft=n_fft
         ),
         'standard_conv': lambda: ArcFaultNet_StandardConv(
             in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
-            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier,
+            fs=fs, n_fft=n_fft
         ),
         'independent_cbam': lambda: ArcFaultNet_IndependentCBAM(
             in_channels=in_channels, use_se=use_se, se_reduction=se_reduction,
-            use_amplitude=use_amplitude, deep_classifier=deep_classifier
+            use_amplitude=use_amplitude, deep_classifier=deep_classifier,
+            fs=fs, n_fft=n_fft
         ),
         'baseline_cnn': lambda: BaselineCNN(in_channels=in_channels),
     }
@@ -954,7 +982,7 @@ def get_model(
 #  AUTO-DETECT ARCHITECTURE FROM CHECKPOINT
 # ═══════════════════════════════════════════════════════
 
-def build_model_from_checkpoint(ckpt_path, device='cpu'):
+def build_model_from_checkpoint(ckpt_path, device='cpu', fs: float = 1_000_000, n_fft: int = 512):
     """
     Auto-detect model architecture from checkpoint state_dict keys
     and reconstruct the exact model used during training.
@@ -967,6 +995,8 @@ def build_model_from_checkpoint(ckpt_path, device='cpu'):
     Args:
         ckpt_path: Path to .pt checkpoint file
         device: Device to load model onto
+        fs: Sampling frequency (Hz) — pass dataset.fs for correct Gabor init
+        n_fft: FFT size used during training STFT
     
     Returns:
         model: Loaded model in eval mode
@@ -997,6 +1027,7 @@ def build_model_from_checkpoint(ckpt_path, device='cpu'):
 
     print(f"  Detected: hidden_dims={hidden_dims}, C={C}, d_k={d_k}")
     print(f"  amplitude={use_amplitude}, SE={use_se}, deep_clf={deep_classifier}")
+    print(f"  fs={fs:,} Hz, n_fft={n_fft}")
 
     model = ArcFaultNet(
         in_channels=2,
@@ -1008,7 +1039,9 @@ def build_model_from_checkpoint(ckpt_path, device='cpu'):
         se_reduction=se_reduction,
         use_amplitude=use_amplitude,
         deep_classifier=deep_classifier,
-        classifier_hidden=clf_hidden
+        classifier_hidden=clf_hidden,
+        fs=fs,
+        n_fft=n_fft
     )
     model.load_state_dict(sd)
     model.to(device).eval()

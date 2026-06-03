@@ -14,6 +14,8 @@ labeled_dataset/*.npy
 labeled_dataset/*.csv
 combined_dataset/*.npy
 combined_dataset/*.csv
+combined_dataset_2048/*.npy
+combined_dataset_2048/*.csv
 TestModel/prepared_data/X_multi.npy
 TestModel/prepared_data/y.npy
 # On garde uniquement les fichiers de config légers
@@ -22,6 +24,8 @@ TestModel/prepared_data/y.npy
 !labeled_dataset/config_multi.json
 !combined_dataset/charge_map.json
 !combined_dataset/config.json
+!combined_dataset_2048/charge_map.json
+!combined_dataset_2048/config.json
 
 # ── Checkpoints et runs d'entraînement ──────────────────
 !runs/arcfaultnet_single_20260504_114636/

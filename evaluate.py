@@ -1404,7 +1404,7 @@ def evaluate_groupkfold_run(
         print(f"\n--- Evaluating {fold_name} ({len(test_idx)} test samples) ---")
 
         # Load model
-        model = get_model(model_name, in_channels=2).to(device)
+        model = get_model(model_name, in_channels=2, fs=dataset.fs, n_fft=dataset.n_fft).to(device)
         model.load_state_dict(torch.load(best_ckpts[0], map_location=device))
         model.eval()
 
@@ -1553,7 +1553,7 @@ def evaluate_model(
           f"train={n_train}, val={n_val}, test={len(test_indices)}")
 
     # ── Load model ───────────────────────────────────────────────
-    model = get_model(model_name, in_channels=2).to(device)
+    model = get_model(model_name, in_channels=2, fs=dataset.fs, n_fft=dataset.n_fft).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
@@ -1665,6 +1665,10 @@ def main():
     parser.add_argument('--threshold', type=float, default=0.5)
     parser.add_argument('--cpu', action='store_true',
                         help='Force CPU evaluation')
+    parser.add_argument('--fs', type=int, default=None,
+                        help='Sampling frequency (auto-detected if None)')
+    parser.add_argument('--n-fft', type=int, default=512)
+    parser.add_argument('--hop-length', type=int, default=256)
 
     args = parser.parse_args()
 
@@ -1675,7 +1679,9 @@ def main():
         device = torch.device('cuda')
 
     # Load dataset
-    dataset = ArcFaultDataset(data_dir=args.data_dir)
+    dataset = ArcFaultDataset(data_dir=args.data_dir, n_fft=args.n_fft, hop_length=args.hop_length)
+    if args.fs is not None:
+        dataset.fs = args.fs
 
     # Load metadata and normalize columns for combined_dataset compatibility
     meta_path = Path(args.data_dir) / 'metadata.csv'

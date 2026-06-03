@@ -1,0 +1,12 @@
+dataset_index,prob,source_dir,exp_id,file_num,alt_index,arc_ratio
+4479,0.9500890374183655,22_juillet_clean,exp13--IJL--LR,,1,0.0
+9014,0.8057729601860046,8_juillet_clean,exp11--IJL--LR,,21,0.0
+6482,0.7986950874328613,22_juillet_clean,exp13--IJL--LR,,23,0.0
+3197,0.7880620360374451,22_juillet_clean,exp13--IJL--LR,,2,0.0
+9908,0.6996679902076721,OthmaneSalim10052026,GraphAcier_Kettle+Halogene+SilenceIbis,,96,0.0
+9170,0.6847321391105652,8_juillet_clean,exp11--IJL--LR,,4,0.0
+3453,0.669557511806488,22_juillet_clean,exp13--IJL--LR,,23,0.0
+10239,0.6500276923179626,OthmaneSalim10052026,AcierCu_AspiRougeBis,,11,0.0
+8993,0.6309123635292053,8_juillet_clean,exp11--IJL--LR,,0,0.0
+3244,0.6011893153190613,22_juillet_clean,exp13--IJL--LR,,2,0.0
+7838,0.5821393728256226,8_juillet_clean,exp11--IJL--LR,,2,0.0

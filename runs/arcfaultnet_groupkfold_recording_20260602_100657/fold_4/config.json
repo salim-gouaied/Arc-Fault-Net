@@ -1,0 +1,17 @@
+{
+  "fold": 4,
+  "fold_name": "fold_4",
+  "model_name": "arcfaultnet",
+  "group_level": "recording",
+  "n_folds": 5,
+  "global_seed": 42,
+  "fold_seed": 45,
+  "epochs": 200,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "batch_size": 64,
+  "patience": 10,
+  "gradient_clip": 0.5,
+  "threshold": 0.5,
+  "use_pos_weight": false
+}

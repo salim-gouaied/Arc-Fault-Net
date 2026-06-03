@@ -338,7 +338,9 @@ def run_leave_one_charge_out_cv(
     use_se: bool = False,
     se_reduction: int = 8,
     use_amplitude: bool = False,
-    deep_classifier: bool = False
+    deep_classifier: bool = False,
+    fs: float = 1_000_000,
+    n_fft: int = 512
 ) -> Dict:
     """
     Run leave-one-charge-out cross-validation.
@@ -392,7 +394,8 @@ def run_leave_one_charge_out_cv(
         model = get_model(model_name, in_channels=2,
                       use_se=use_se, se_reduction=se_reduction,
                       use_amplitude=use_amplitude,
-                      deep_classifier=deep_classifier).to(device)
+                      deep_classifier=deep_classifier,
+                      fs=fs, n_fft=n_fft).to(device)
         n_params = sum(p.numel() for p in model.parameters())
 
         model, history = train_model(
@@ -477,6 +480,14 @@ def run_leave_one_charge_out_cv(
         'n_folds':        len(all_results),
         'global_seed':    seed,
         'timestamp':      timestamp,
+        'data_dir':       str(dataset.data_dir),
+        'fs':             int(fs),
+        'n_fft':          n_fft,
+        'hop_length':     dataset.hop_length,
+        'use_se':         use_se,
+        'se_reduction':   se_reduction,
+        'use_amplitude':  use_amplitude,
+        'deep_classifier': deep_classifier,
         'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
@@ -522,7 +533,9 @@ def run_single_training(
     use_se: bool = False,
     se_reduction: int = 8,
     use_amplitude: bool = False,
-    deep_classifier: bool = False
+    deep_classifier: bool = False,
+    fs: float = 1_000_000,
+    n_fft: int = 512
 ) -> Dict:
     """
     Single training run with random train/val/test split.
@@ -575,7 +588,8 @@ def run_single_training(
     model = get_model(model_name, in_channels=2,
                       use_se=use_se, se_reduction=se_reduction,
                       use_amplitude=use_amplitude,
-                      deep_classifier=deep_classifier).to(device)
+                      deep_classifier=deep_classifier,
+                      fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
 
@@ -605,6 +619,14 @@ def run_single_training(
         'seed':           seed,
         'n_params':       n_params,
         'timestamp':      timestamp,
+        'data_dir':       str(dataset.data_dir),
+        'fs':             int(fs),
+        'n_fft':          n_fft,
+        'hop_length':     dataset.hop_length,
+        'use_se':         use_se,
+        'se_reduction':   se_reduction,
+        'use_amplitude':  use_amplitude,
+        'deep_classifier': deep_classifier,
         'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
@@ -648,7 +670,9 @@ def run_kfold_cv(
     use_se: bool = False,
     se_reduction: int = 8,
     use_amplitude: bool = False,
-    deep_classifier: bool = False
+    deep_classifier: bool = False,
+    fs: float = 1_000_000,
+    n_fft: int = 512
 ) -> Dict:
     """
     Stratified K-Fold cross-validation.
@@ -708,7 +732,8 @@ def run_kfold_cv(
         model = get_model(model_name, in_channels=2,
                           use_se=use_se, se_reduction=se_reduction,
                           use_amplitude=use_amplitude,
-                          deep_classifier=deep_classifier).to(device)
+                          deep_classifier=deep_classifier,
+                          fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
             print(f"    Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -848,7 +873,9 @@ def run_groupkfold_cv(
     use_se: bool = False,
     se_reduction: int = 8,
     use_amplitude: bool = False,
-    deep_classifier: bool = False
+    deep_classifier: bool = False,
+    fs: float = 1_000_000,
+    n_fft: int = 512
 ) -> Dict:
     """
     Group-based K-Fold cross-validation preventing data leakage.
@@ -977,7 +1004,8 @@ def run_groupkfold_cv(
         model = get_model(model_name, in_channels=2,
                           use_se=use_se, se_reduction=se_reduction,
                           use_amplitude=use_amplitude,
-                          deep_classifier=deep_classifier).to(device)
+                          deep_classifier=deep_classifier,
+                          fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
             print(f"    Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -1128,6 +1156,13 @@ def main():
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true', help='Force CPU training')
+    # Signal / STFT parameters (for decimated datasets)
+    parser.add_argument('--fs', type=int, default=None,
+                        help='Sampling frequency in Hz (auto-detected from config.json if not set)')
+    parser.add_argument('--n-fft', type=int, default=512,
+                        help='FFT size for STFT (default: 512, use 128 for decimated 2048-point data)')
+    parser.add_argument('--hop-length', type=int, default=256,
+                        help='STFT hop length (default: 256, use 64 for decimated 2048-point data)')
     # Architecture enhancement flags
     parser.add_argument('--use-se', action='store_true',
                         help='Add Squeeze-and-Excitation blocks to conv layers')
@@ -1152,8 +1187,14 @@ def main():
         print("Run: python step2_build_multichannel.py")
         return
 
-    dataset    = ArcFaultDataset(data_dir=str(data_dir))
+    dataset    = ArcFaultDataset(data_dir=str(data_dir),
+                                  n_fft=args.n_fft,
+                                  hop_length=args.hop_length)
     output_dir = Path(args.output_dir)
+
+    # Resolve fs: CLI override > auto-detected from config.json
+    fs = args.fs if args.fs is not None else dataset.fs
+    print(f"Signal: fs={fs:,} Hz  |  n_fft={args.n_fft}  |  hop_length={args.hop_length}")
 
     if args.mode == 'cv':
         run_leave_one_charge_out_cv(
@@ -1175,7 +1216,9 @@ def main():
             use_se=args.use_se,
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
-            deep_classifier=args.deep_clf
+            deep_classifier=args.deep_clf,
+            fs=fs,
+            n_fft=args.n_fft
         )
     elif args.mode == 'kfold':
         run_kfold_cv(
@@ -1197,7 +1240,9 @@ def main():
             use_se=args.use_se,
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
-            deep_classifier=args.deep_clf
+            deep_classifier=args.deep_clf,
+            fs=fs,
+            n_fft=args.n_fft
         )
     elif args.mode == 'groupkfold':
         run_groupkfold_cv(
@@ -1220,7 +1265,9 @@ def main():
             use_se=args.use_se,
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
-            deep_classifier=args.deep_clf
+            deep_classifier=args.deep_clf,
+            fs=fs,
+            n_fft=args.n_fft
         )
     else:
         run_single_training(
@@ -1241,7 +1288,9 @@ def main():
             use_se=args.use_se,
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
-            deep_classifier=args.deep_clf
+            deep_classifier=args.deep_clf,
+            fs=fs,
+            n_fft=args.n_fft
         )
 
 

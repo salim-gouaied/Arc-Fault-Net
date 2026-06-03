@@ -58,12 +58,21 @@ class ArcFaultDataset(Dataset):
         self.training = training  # Controls augmentation
         
         # Load data
-        self.X = np.load(self.data_dir / 'X_multi.npy')  # (N, 2, 20000) — [V_ligne, I]
+        self.X = np.load(self.data_dir / 'X_multi.npy')  # (N, 2, seq_len) — [V_ligne, I]
         self.y = np.load(self.data_dir / 'y.npy')        # (N,)
         
         self.n_samples = len(self.y)
         self.n_channels = self.X.shape[1]
         self.seq_len = self.X.shape[2]
+        
+        # Read sampling frequency from config.json (auto-detect 1 MHz vs 102.4 kHz)
+        config_path = self.data_dir / 'config.json'
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                cfg = json.load(f)
+            self.fs = cfg.get('FS', 1_000_000)
+        else:
+            self.fs = 1_000_000
         
         # Load charges (optional — may not exist for new datasets)
         charges_path = self.data_dir / 'charges.npy'
@@ -97,7 +106,8 @@ class ArcFaultDataset(Dataset):
         print(f"ArcFaultDataset loaded:")
         print(f"  Samples: {self.n_samples}")
         print(f"  Input shape: {self.X.shape}")
-        print(f"  STFT shape per channel: ({self.n_freq}, {self.n_time})")
+        print(f"  Sampling freq: {self.fs:,} Hz  (seq_len={self.seq_len})")
+        print(f"  STFT shape per channel: ({self.n_freq}, {self.n_time})  [n_fft={n_fft}, hop={hop_length}]")
         print(f"  Charges: {self.n_charges}")
         print(f"  Label distribution: {np.sum(self.y==0)} normal, {np.sum(self.y==1)} arc")
     
