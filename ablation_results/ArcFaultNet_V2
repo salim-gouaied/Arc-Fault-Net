@@ -1,0 +1,434 @@
+ARC-FAULTNET V2 — Full Architecture Specification Prompt
+Here is the full architecture prompt you can use directly with any coding assistant or as your own implementation specification.
+
+---
+
+# ARC-FAULTNET V2 — Full Architecture Specification Prompt
+
+---
+
+## Context and Mission
+
+You are a machine learning and signal processing engineer. You must redesign and implement **ARC-FaultNet V2**, an improved deep learning architecture for series arc fault detection on raw electrical signals I(t) and V(t). The redesign is based on a thorough critique of the original architecture and on the Dowalla et al. (2023) paper on time-domain feature extraction for arc fault detection.
+
+The new architecture must be **physically grounded, computationally justified, and generalization-focused**. Every design choice must map to a known physical property of the series arc phenomenon.
+
+---
+
+## Input Specification
+
+```
+Raw signals per window:
+  - I(t)       : total line current         shape: (batch, 1, N_samples)
+  - V(t)       : line voltage               shape: (batch, 1, N_samples)
+
+Window structure:
+  - Each window contains exactly N = 50 consecutive 50Hz cycles
+  - Each cycle contains M samples (M = fs / 50)
+  - After reshaping: (batch, N, M) per signal
+  - Example: fs = 62500 Hz → M = 1250, total = 62500 samples per window
+
+Label:
+  - Binary: 1 = arc present in window, 0 = no arc
+  - Arc is intermittent: may fire in only 7–30 of the 50 cycles
+```
+
+---
+
+## What to Remove Entirely
+
+**Remove all of the following from the original architecture:**
+
+- `ParametricConv1d` — Gabor filters are wrong for arc detection. The arc is aperiodic and impulsive, not oscillatory at a carrier frequency. Gabor filters impose a smooth Gaussian envelope on something inherently sharp and irregular. Delete the entire class.
+- `f0`, `sigma` learnable parameters — these have no physical meaning for arc signals.
+- Symmetric `MaxPool2d(2, 2)` in the 2D branch — destroys frequency resolution too aggressively before the CNN can learn spectral structure.
+- Fixed hard-coded frequency slice `[FREQ_BIN_LOW:FREQ_BIN_HIGH]` as a static index — replace with a learnable soft frequency gate.
+- External fixed STFT preprocessing as the sole time-frequency transform — move toward a partially learnable filterbank.
+- Double `Dropout` in the classifier head — replace with single well-placed dropout.
+- The final Random Forest or XGBoost is added **after** the deep network, not inside it. The CNN extracts the embedding; the tree model classifies. See Stage 5.
+
+---
+
+## Stage 1 — Inter-Cycle Delta Encoding (Dowalla-Grounded)
+
+**Physical motivation:** The series arc creates inter-cycle instability. The waveform shape of cycle k differs from cycle k-1 when arc fires. This inter-cycle discontinuity is the primary arc signature. It is invisible to models that process a single window as a static object.
+
+**Implementation:**
+
+```python
+# Input I reshaped to cycles: (batch, N, M)
+# Compute signed and unsigned inter-cycle deltas:
+
+delta_I      = I_cycles[:, 1:, :] - I_cycles[:, :-1, :]   # (batch, N-1, M) signed
+abs_delta_I  = delta_I.abs()                                # (batch, N-1, M) unsigned
+
+# Same for voltage:
+delta_V      = V_cycles[:, 1:, :] - V_cycles[:, :-1, :]   # (batch, N-1, M)
+abs_delta_V  = delta_V.abs()                                # (batch, N-1, M)
+```
+
+These four tensors are the **primary input** to Stage 2. The raw cycles I_cycles and V_cycles are also kept as secondary input for the waveform encoder.
+
+---
+
+## Stage 2 — Per-Cycle Feature Extraction (Two Parallel Sub-Branches)
+
+For each of the N-1 cycle pairs, extract features independently. Think of this as a **per-token feature extractor** where each cycle pair is one token.
+
+### Sub-Branch A — Dowalla Scalar Descriptors (Physics-Grounded)
+
+**Compute the following 8 scalar features per cycle pair k, using I signal:**
+
+```
+E_mod_k   = sum(|ΔI_k|)                          inter-cycle L1 energy
+ED_k      = sqrt(sum(ΔI_k²))                     inter-cycle Euclidean distance
+MSSD_k    = max(|ΔI_k|)                          peak sample-wise difference
+MCC_k     = max(|I_k[m] - I_k[m-1]|)            intra-cycle max consecutive delta
+CRC_k     = MSSD_k / RMS(I_{k-1})               rate of change normalized by RMS
+ZCP_k     = mean(|I_k| < 0.05 * RMS(I_{k-1}))  zero-current proportion (flat shoulder)
+E_mod_V_k = sum(|ΔV_k|)                          voltage inter-cycle L1 energy
+ED_V_k    = sqrt(sum(ΔV_k²))                     voltage Euclidean distance
+```
+
+**Important notes on these descriptors:**
+- `CRC_k` is load-invariant because it normalizes by the previous cycle's RMS — it compares the arc perturbation magnitude relative to the load's own amplitude. This is critical for generalization across different load types and powers.
+- `ZCP_k` detects the flat shoulder effect specific to resistive loads. It will be near zero for SMPS loads but informative for resistive ones. Include it but let the model learn its weight.
+- `E_mod_V_k` and `ED_V_k` are the Dowalla voltage features. The paper showed that voltage features are more stable across load types and reduce false positives significantly.
+- All features must be computed **per cycle pair**, not globally over the window.
+
+**Architecture of Sub-Branch A:**
+
+```
+Input: 8 scalars per cycle pair → (batch, N-1, 8)
+→ LayerNorm over feature dim
+→ MLP: Linear(8, 32) + GELU + Linear(32, 64)
+→ Output: (batch, N-1, 64)
+```
+
+Use GELU not ReLU here — the scalar features can be negative (delta_I) and GELU handles negative inputs more gracefully than ReLU's hard zero gate.
+
+---
+
+### Sub-Branch B — Waveform Delta Encoder (Lightweight Conv1D)
+
+**Physical motivation:** The scalar descriptors of Sub-Branch A compress each cycle pair to 8 numbers, losing the *shape* of the delta waveform. The shape encodes load-specific arc signatures — for example, SMPS arcs produce narrow spikes at specific phase angles, while resistive arcs produce broad flat regions near zero crossing. A Conv1D operating on |ΔI_k| can learn these shape patterns.
+
+**Input:** `abs_delta_I`: (batch, N-1, M) — treat each cycle pair's delta waveform as an independent sequence.
+
+**Implementation note:** Process all N-1 cycle pairs simultaneously by reshaping:
+
+```python
+x = abs_delta_I.view(batch * (N-1), 1, M)   # treat each cycle pair as a batch item
+
+# Lightweight Conv1D encoder:
+Conv1d(1,  32, kernel_size=16, padding=8) + BN + GELU
+Conv1d(32, 64, kernel_size=8,  padding=4) + BN + GELU + MaxPool1d(4)
+Conv1d(64, 64, kernel_size=4,  padding=2) + BN + GELU + AdaptiveAvgPool1d(16)
+# → (batch*(N-1), 64, 16)
+
+# Global average pool over the 16 positions:
+→ (batch*(N-1), 64)
+
+# Reshape back:
+→ (batch, N-1, 64)
+```
+
+**Do not use Gabor filters here.** Standard Conv1d is correct — the filters learn to detect arc-specific delta shapes directly from data without imposing a frequency-oscillation prior.
+
+---
+
+### Sub-Branch C — Revised Spectral Branch (Keep from V1, Fixed)
+
+**Why keep it:** The STFT branch captures **intra-cycle broadband HF bursts** that are physically distinct from the inter-cycle discontinuity detected by Sub-Branches A and B. When the arc plasma ignites and extinguishes within a single cycle, it generates a microsecond-to-millisecond burst of high-frequency energy (kHz range) invisible to the inter-cycle delta approach because the delta between cycles averages out rapid oscillations. The empirical accuracy improvement from V1 confirms this branch captures a real and complementary arc signature.
+
+**Fix 1 — Asymmetric Pooling (preserve frequency resolution):**
+
+Replace all `MaxPool2d(2, 2)` with asymmetric pooling that compresses time aggressively but preserves frequency:
+
+```python
+MaxPool2d(kernel_size=(1, 4))   # Layer 1: time only, frequency untouched
+MaxPool2d(kernel_size=(2, 4))   # Layer 2: moderate frequency, aggressive time
+# No pooling at Layer 3 — let AdaptiveAvgPool2d handle final sizing
+```
+
+**Fix 2 — Learnable Soft Frequency Gate:**
+
+Replace the hard `[FREQ_BIN_LOW:FREQ_BIN_HIGH]` slice with a learned soft mask that the model adapts based on which frequency bands actually carry arc information for each load type:
+
+```python
+class FrequencyGate(nn.Module):
+    def __init__(self, n_freq_bins, in_channels):
+        super().__init__()
+        self.gate = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=(3, 1), padding=(1, 0)),  # operate on freq axis only
+            nn.Sigmoid()
+        )
+    
+    def forward(self, x):
+        # x: (B, C, n_freq, n_time)
+        mask = self.gate(x)      # (B, C, n_freq, n_time) — soft frequency attention
+        return x * mask          # emphasize informative frequency bands
+```
+
+Apply this gate as the very first operation in the spectral branch, before any Conv2d layer.
+
+**Fix 3 — Revised Conv2D Stack:**
+
+```python
+FrequencyGate(n_freq_bins, in_channels=2)
+Conv2d(2,  32, kernel_size=3, padding=1) + BN2d + GELU
+MaxPool2d(kernel_size=(1, 4))               ← time only
+Conv2d(32, 64, kernel_size=3, padding=1) + BN2d + GELU
+MaxPool2d(kernel_size=(2, 4))               ← moderate freq, compress time
+Conv2d(64, 128, kernel_size=3, padding=1) + BN2d + GELU
+AdaptiveAvgPool2d((4, output_dim))          ← keep 4 freq groups, D time positions
+→ reshape: (B, 128*4, D) → Conv1d(512, 128, 1) → (B, 128, D)
+```
+
+Keeping 4 frequency groups instead of collapsing to 1 with `(1, D)` preserves coarse frequency band information through to the attention module.
+
+---
+
+### Concatenate Sub-Branch outputs per cycle
+
+```
+A output: (batch, N-1, 64)   — Dowalla scalar descriptors
+B output: (batch, N-1, 64)   — delta waveform shape
+→ concat: (batch, N-1, 128)
+→ LayerNorm
+→ Linear(128, 128) + GELU    — project to joint space
+
+C output: (batch, 128, D)    — spectral features (handled separately, see Stage 3)
+```
+
+---
+
+## Stage 3 — Temporal Reasoning Across Cycles (New — Critical Addition)
+
+**Physical motivation:** The arc is intermittent. It fires in 7–30 of 50 cycles non-consecutively. A model that processes each cycle independently and then averages (as V1 does via GAP) cannot distinguish:
+- A window where 7 cycles fire consecutively (strong local arc)
+- A window where 7 cycles fire scattered randomly (intermittent arc)
+- A window where 7 cycles fire with a periodic pattern (motor brush noise)
+
+These three patterns have **identical global statistics** but very different temporal structure. Only a sequence model can distinguish them. This stage is the most important architectural addition in V2.
+
+**Implementation — Bidirectional GRU over cycle sequence:**
+
+```python
+# Input: (batch, N-1, 128) — sequence of N-1 cycle-pair feature vectors
+
+self.temporal_encoder = nn.GRU(
+    input_size=128,
+    hidden_size=128,
+    num_layers=2,
+    batch_first=True,
+    bidirectional=True,
+    dropout=0.2          # between GRU layers only
+)
+# Output: (batch, N-1, 256)   [bidirectional → 2 * hidden]
+
+# Reduce 256 → 128 and produce per-cycle scores:
+self.cycle_proj = nn.Linear(256, 128)
+# Output: (batch, N-1, 128)
+
+# Temporal attention: learn which cycles contributed most to the arc signature
+# This produces an interpretable per-cycle importance score
+self.cycle_attention = nn.Sequential(
+    nn.Linear(128, 32),
+    nn.Tanh(),
+    nn.Linear(32, 1)
+)
+# attention_scores: (batch, N-1, 1) → softmax → (batch, N-1, 1)
+# context = (attention_scores * cycle_features).sum(dim=1) → (batch, 128)
+```
+
+**Why GRU over Transformer here:**
+- You have N-1 = 49 tokens maximum — short enough that a GRU handles it efficiently
+- GRU has a natural inductive bias for sequential temporal data (the hidden state carries memory of previous arc firings)
+- A Transformer would need positional encodings and more data to learn the sequential structure from scratch
+- GRU is also faster to train and less prone to overfitting on small-to-medium datasets
+
+**Output of Stage 3:** `context_1d`: (batch, 128) — a single vector summarizing the temporal arc firing pattern across all cycles.
+
+---
+
+## Stage 4 — Cross-Branch Fusion (Revised Joint Attention)
+
+**Physical motivation:** The spectral branch (Sub-Branch C) operates on a different temporal resolution than the cycle-level GRU output. They must be fused carefully.
+
+**Fix the CAM channel-ordering bug from V1:**
+
+In V1, `cam_w` was split as `[:C]` → temporal and `[C:]` → spectral, but this ordering is not preserved after joint CAM training. Fix by using **separate CAM modules per branch** that cross-condition on each other:
+
+```python
+class RevisedCrossAttention(nn.Module):
+    def __init__(self, channels=128):
+        super().__init__()
+        # Each branch's CAM is conditioned on the OTHER branch's global summary
+        self.cam_spectral_conditioned = nn.Sequential(
+            nn.Linear(channels * 2, channels),  # input: own + other branch global
+            nn.ReLU(),
+            nn.Linear(channels, channels),
+            nn.Sigmoid()
+        )
+        self.cam_temporal_conditioned = nn.Sequential(
+            nn.Linear(channels * 2, channels),
+            nn.ReLU(),
+            nn.Linear(channels, channels),
+            nn.Sigmoid()
+        )
+        self.fusion = nn.Sequential(
+            nn.Linear(channels * 2, channels),
+            nn.GELU()
+        )
+    
+    def forward(self, f_temporal, f_spectral):
+        # f_temporal: (batch, 128) — from GRU context
+        # f_spectral: (batch, 128) — from spectral branch GAP
+        
+        # Cross-condition: each branch's gate sees both branches
+        joint = torch.cat([f_temporal, f_spectral], dim=-1)  # (batch, 256)
+        
+        gate_t = self.cam_temporal_conditioned(joint)   # (batch, 128)
+        gate_s = self.cam_spectral_conditioned(joint)   # (batch, 128)
+        
+        f_t_gated = f_temporal * gate_t                 # (batch, 128)
+        f_s_gated = f_spectral * gate_s                 # (batch, 128)
+        
+        fused = self.fusion(
+            torch.cat([f_t_gated, f_s_gated], dim=-1)  # (batch, 256)
+        )                                                # (batch, 128)
+        return fused
+```
+
+**Prepare spectral features for fusion:**
+
+```python
+# Sub-Branch C output: (batch, 128, D)
+# Apply GAP to get global spectral summary:
+f_spectral = spectral_features.mean(dim=-1)   # (batch, 128)
+
+# Temporal context from Stage 3:
+f_temporal = context_1d                        # (batch, 128)
+
+# Cross-branch fusion:
+f_fused = cross_attention(f_temporal, f_spectral)   # (batch, 128)
+```
+
+---
+
+## Stage 5 — Hybrid Classifier: Deep Embedding → Random Forest / XGBoost
+
+**Design philosophy:** The CNN+GRU extracts a rich 128-dimensional embedding that captures the physics of the arc. The final classification decision is handed to a tree-based model (Random Forest or XGBoost) that operates on this embedding. This hybrid approach gives you:
+
+- **Better generalization on small/medium datasets** — tree models don't overfit embeddings the way a final FC layer can
+- **Interpretability** — feature importance from XGBoost on the 128-dim embedding tells you which embedding dimensions (and by extension which arc signatures) drive the decision
+- **Calibrated probabilities** — XGBoost with `objective='binary:logistic'` gives well-calibrated probabilities without needing Platt scaling
+
+**Training protocol — two phases:**
+
+```
+Phase 1 — Pretrain the deep network end-to-end with a simple FC head:
+  f_fused (batch, 128)
+  → Linear(128, 64) + GELU + Dropout(0.3)
+  → Linear(64, 1)
+  → BCEWithLogitsLoss
+  
+  Train until convergence (early stopping on validation F-score).
+  This FC head is a placeholder — it will be discarded after Phase 1.
+
+Phase 2 — Extract embeddings and train tree classifier:
+  1. Freeze all weights of the deep network
+  2. Run full training set through the frozen network
+  3. Collect f_fused vectors: shape (N_train_windows, 128)
+  4. Train XGBoost or Random Forest on these 128-dim vectors
+  
+  Recommended XGBoost config:
+    objective = 'binary:logistic'
+    n_estimators = 300
+    max_depth = 6
+    learning_rate = 0.05
+    subsample = 0.8
+    colsample_bytree = 0.8
+    scale_pos_weight = (n_negative / n_positive)   ← critical for class imbalance
+    eval_metric = 'auc'
+    early_stopping_rounds = 30
+
+  Recommended Random Forest config:
+    n_estimators = 500
+    max_depth = None
+    min_samples_leaf = 5
+    class_weight = 'balanced'
+    max_features = 'sqrt'
+```
+
+**Why XGBoost over Random Forest for this problem:**
+- XGBoost handles the 128-dim embedding more efficiently via column subsampling
+- `scale_pos_weight` directly addresses arc class imbalance (arc cycles are minority in real deployments even if balanced in your training set)
+- XGBoost's feature importance via `gain` metric will tell you which of the 128 embedding dimensions carry the most discriminative power — useful for debugging and understanding what the network learned
+
+**Optional Phase 3 — Fine-tune jointly:**
+After Phase 2, unfreeze the deep network and fine-tune with a very small learning rate (1e-5) using the XGBoost predictions as soft labels. This closes the gap between the embedding space and the tree classifier's decision surface.
+
+---
+
+## Complete V2 Architecture Summary
+
+```
+Input: I(t), V(t) — N cycles of M samples each
+              ↓
+┌─────────────────────────────────────────────────────────┐
+│  STAGE 1: Inter-Cycle Delta Encoding                    │
+│  ΔI_k, |ΔI_k|, ΔV_k, |ΔV_k|   → (batch, N-1, M)      │
+└───────────┬─────────────────────────────────────────────┘
+            │
+     ┌──────┴──────┐
+     ▼             ▼
+┌─────────┐   ┌─────────┐   ┌──────────────────────┐
+│ Branch A│   │ Branch B│   │ Branch C (Spectral)  │
+│ Dowalla │   │ Conv1D  │   │ STFT + FreqGate      │
+│ Scalars │   │ on |ΔI| │   │ Asymmetric Pooling   │
+│ (batch, │   │ (batch, │   │ (batch, 128, D)      │
+│  N-1,64)│   │  N-1,64)│   └──────────┬───────────┘
+└────┬────┘   └────┬────┘              │
+     └──────┬──────┘              GAP  ↓
+            ▼                  (batch, 128)
+     (batch, N-1, 128)              │
+            │                       │
+┌───────────▼───────────┐           │
+│  STAGE 3: BiGRU        │           │
+│  Temporal Reasoning    │           │
+│  over N-1 cycle tokens │           │
+│  + Cycle Attention     │           │
+│  → context (batch,128) │           │
+└───────────┬───────────┘           │
+            └──────────┬────────────┘
+                       ▼
+          ┌────────────────────────┐
+          │  STAGE 4: Cross-Branch │
+          │  Fusion (fixed CAM)    │
+          │  → f_fused (batch,128) │
+          └────────────┬───────────┘
+                       ▼
+          ┌────────────────────────┐
+          │  STAGE 5: XGBoost /    │
+          │  Random Forest on      │
+          │  128-dim embedding     │
+          │  → P(arc)              │
+          └────────────────────────┘
+```
+
+---
+
+## Key Constraints and Implementation Notes
+
+**On normalization:** Normalize each cycle independently by its own RMS before computing any descriptor. Do not use global dataset normalization for the raw signal — different circuits have wildly different amplitude ranges and the model must generalize across them.
+
+**On the IEC 62606 rule:** The BiGRU + cycle attention in Stage 3 is the learned equivalent of Dowalla's ALS counter (at least 7 arcing cycles in the last second). You do not need to implement the hard threshold rule separately — the GRU will learn to weight windows where multiple cycles show arc signatures. However, during evaluation, report metrics both at the raw model output level and after applying the IEC rule (require the model to fire on at least 7 cycles worth of signal) for fair comparison with the paper.
+
+**On class imbalance:** The clean segment of each signal is the natural negative class. Use `scale_pos_weight` in XGBoost and `pos_weight` in `BCEWithLogitsLoss` during Phase 1. Do not oversample — the arc pattern is already represented by the temporal structure the GRU learns.
+
+**On the SAM from V1:** The `SpatialAttention` (Q, K, V self-attention over the D dimension) is replaced by the **cycle attention** in the BiGRU stage, which is semantically correct — it attends over actual cycle positions rather than over abstract pooled feature positions. Remove the V1 SAM entirely.
+
+**On overfitting:** The scalar descriptor branch (Sub-Branch A) is the most important regularizer — it forces the network to maintain a representation that is consistent with physically meaningful features. If the network overfits, increase the weight of a supervised auxiliary loss on the scalar descriptors (predict which Dowalla features are elevated) as a regularization signal.

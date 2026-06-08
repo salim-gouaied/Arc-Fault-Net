@@ -905,6 +905,249 @@ class BaselineCNN(nn.Module):
         return self.fc(x).squeeze(-1)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  ARC-FAULTNET V2 — single-cycle adaptation
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  Design notes (see ablation_results/ArcFaultNet_V2 spec):
+#    * Input is a SINGLE 50 Hz cycle (M samples, e.g. 2048 @ 102.4 kHz).
+#    * The temporal branch consumes 4 physically-derived channels built from
+#      I(t) only: [I, |dI|, TKEO(I), RMS_slide(I)] — produced in dataset.py.
+#      V(t) is used outside the model (segmentation); V_arc only for labels.
+#    * Gabor / ParametricConv1d is intentionally REMOVED: the arc is aperiodic
+#      and impulsive, so plain Conv1d filters are the correct prior.
+#    * The spectral branch is revised: a learnable soft FrequencyGate replaces
+#      the hard frequency slice, and asymmetric pooling compresses time while
+#      preserving frequency resolution; 4 frequency groups are kept.
+#    * Cross-branch fusion uses separate, mutually-conditioned channel gates
+#      (RevisedCrossAttention) instead of V1's single joint-CAM split.
+#    * Stage 5 (XGBoost/RandomForest on the 128-d embedding) is handled OUTSIDE
+#      this module by train_xgb_head.py — this model exposes the embedding via
+#      forward(..., return_embedding=True).
+#
+#  The inter-cycle stages of the full V2 spec (delta encoding across cycles,
+#  Dowalla per-cycle-pair scalars, BiGRU temporal reasoning, IEC ALS counter)
+#  require a MULTI-cycle dataset (B, N, M) which does not exist yet, so they
+#  are deliberately out of scope here. Hooks are documented for a future
+#  multi-cycle dataset.
+
+class FrequencyGate(nn.Module):
+    """
+    Learnable soft frequency attention applied on the spectrogram.
+
+    Replaces the hard ``[FREQ_BIN_LOW:FREQ_BIN_HIGH]`` slice of V1. The gate
+    operates on the frequency axis only (kernel (3,1)) and emphasises the bands
+    that actually carry arc information for the current load, instead of a fixed
+    hand-picked band.
+    """
+
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.gate = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=(3, 1), padding=(1, 0)),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, C, n_freq, n_time)
+        return x * self.gate(x)
+
+
+class SpectralBranchV2(nn.Module):
+    """
+    Revised spectral branch (Sub-Branch C of the V2 spec).
+
+    FrequencyGate -> Conv2d stack with ASYMMETRIC pooling (time compressed,
+    frequency preserved) -> keep 4 frequency groups -> project to (B, 128, D).
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4
+    ):
+        super().__init__()
+        self.output_dim = output_dim
+        self.freq_groups = freq_groups
+
+        c0, c1, c2 = hidden_dims
+        self.freq_gate = FrequencyGate(in_channels)
+
+        self.block1 = nn.Sequential(
+            nn.Conv2d(in_channels, c0, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c0), nn.GELU(),
+            nn.MaxPool2d(kernel_size=(1, 4)),           # time only
+        )
+        self.block2 = nn.Sequential(
+            nn.Conv2d(c0, c1, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c1), nn.GELU(),
+            nn.MaxPool2d(kernel_size=(2, 4)),           # moderate freq, aggressive time
+        )
+        self.block3 = nn.Sequential(
+            nn.Conv2d(c1, c2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c2), nn.GELU(),
+        )
+        # Keep `freq_groups` frequency bands and `output_dim` time positions
+        self.adaptive = nn.AdaptiveAvgPool2d((freq_groups, output_dim))
+        # Collapse the (C * freq_groups) channels back to C
+        self.proj = nn.Conv1d(c2 * freq_groups, c2, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, C_spec, n_freq, n_time) — log-power STFT of I(t) (C_spec=1)
+        Returns:
+            (B, 128, D)
+        """
+        x = self.freq_gate(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)              # (B, C, f', t')
+        x = self.adaptive(x)           # (B, C, freq_groups, D)
+        b, c, g, d = x.shape
+        x = x.reshape(b, c * g, d)     # (B, C*freq_groups, D)
+        return self.proj(x)            # (B, C, D)
+
+
+class TemporalBranchV2(nn.Module):
+    """
+    Temporal branch for the 4 derived channels (Sub-Branch B style).
+
+    Plain Conv1d (NO Gabor) with GELU — the filters learn arc-specific delta
+    shapes directly from data without imposing a frequency-oscillation prior.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        kernel_sizes: Tuple[int, int, int] = (16, 8, 4),
+        output_dim: int = 64
+    ):
+        super().__init__()
+        self.output_dim = output_dim
+        dims = [in_channels] + list(hidden_dims)
+        layers = []
+        for i in range(3):
+            layers += [
+                nn.Conv1d(dims[i], dims[i + 1],
+                          kernel_size=kernel_sizes[i],
+                          padding=kernel_sizes[i] // 2),
+                nn.BatchNorm1d(dims[i + 1]),
+                nn.GELU(),
+            ]
+            if i < 2:
+                layers.append(nn.MaxPool1d(4))
+        self.features = nn.Sequential(*layers)
+        self.pool = nn.AdaptiveAvgPool1d(output_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, 4, M) -> (B, 128, D)
+        return self.pool(self.features(x))
+
+
+class RevisedCrossAttention(nn.Module):
+    """
+    Cross-branch fusion (Stage 4 of the V2 spec).
+
+    Fixes the V1 CAM channel-ordering ambiguity: instead of splitting one joint
+    CAM into [:C]/[C:], each branch gets its OWN channel gate that is conditioned
+    on BOTH branches' global summaries, then the two gated vectors are fused.
+    """
+
+    def __init__(self, channels: int = 128):
+        super().__init__()
+        self.cam_temporal = nn.Sequential(
+            nn.Linear(channels * 2, channels), nn.ReLU(inplace=True),
+            nn.Linear(channels, channels), nn.Sigmoid()
+        )
+        self.cam_spectral = nn.Sequential(
+            nn.Linear(channels * 2, channels), nn.ReLU(inplace=True),
+            nn.Linear(channels, channels), nn.Sigmoid()
+        )
+        self.fusion = nn.Sequential(
+            nn.Linear(channels * 2, channels), nn.GELU()
+        )
+
+    def forward(self, f_temporal: torch.Tensor, f_spectral: torch.Tensor) -> torch.Tensor:
+        # f_temporal, f_spectral: (B, C)
+        joint = torch.cat([f_temporal, f_spectral], dim=-1)   # (B, 2C)
+        f_t = f_temporal * self.cam_temporal(joint)
+        f_s = f_spectral * self.cam_spectral(joint)
+        return self.fusion(torch.cat([f_t, f_s], dim=-1))     # (B, C)
+
+
+class ArcFaultNetV2(nn.Module):
+    """
+    Arc-FaultNet V2 (single-cycle adaptation).
+
+      4 derived channels (B,4,M) ── TemporalBranchV2 ─┐
+                                                       ├─ RevisedCrossAttention ─ FC head ─ logit
+      STFT of I(t) (B,1,F,T) ───── SpectralBranchV2 ──┘
+
+    The fused 128-d vector is the embedding consumed later by the tree head
+    (Stage 5). Use ``forward(..., return_embedding=True)`` to retrieve it.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        spec_in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4,
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        C = hidden_dims[-1]
+
+        self.temporal = TemporalBranchV2(
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+        )
+        self.spectral = SpectralBranchV2(
+            in_channels=spec_in_channels, hidden_dims=hidden_dims,
+            output_dim=output_dim, freq_groups=freq_groups
+        )
+        self.cross_attn = RevisedCrossAttention(channels=C)
+
+        # Phase-1 FC head (placeholder — discarded when the XGBoost head is used)
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),                       # single, well-placed dropout
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def extract_embedding(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
+        """Return the fused 128-d embedding (input to Stage 5)."""
+        f_t = self.temporal(x_1d).mean(dim=-1)     # (B, C)  GAP over time
+        f_s = self.spectral(x_2d).mean(dim=-1)     # (B, C)  GAP over time
+        return self.cross_attn(f_t, f_s)           # (B, C)
+
+    def forward(
+        self,
+        x_1d: torch.Tensor,
+        x_2d: torch.Tensor,
+        return_embedding: bool = False
+    ) -> torch.Tensor:
+        """
+        Args:
+            x_1d: (B, 4, M)        — derived channels [I, |dI|, TKEO, RMS_slide]
+            x_2d: (B, 1, F, T)     — log-power STFT of I(t)
+            return_embedding: if True, also return the fused 128-d embedding
+        Returns:
+            logits: (B,)           — raw logits for BCEWithLogitsLoss
+            (optionally) embedding: (B, 128)
+        """
+        emb = self.extract_embedding(x_1d, x_2d)   # (B, C)
+        logits = self.classifier(emb).squeeze(-1)  # (B,)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
 # ═══════════════════════════════════════════════════════
 #  MODEL FACTORY
 # ═══════════════════════════════════════════════════════
@@ -970,6 +1213,9 @@ def get_model(
             fs=fs, n_fft=n_fft
         ),
         'baseline_cnn': lambda: BaselineCNN(in_channels=in_channels),
+        # Arc-FaultNet V2 (single-cycle): 4 I-derived temporal channels + revised
+        # spectral branch (STFT of I only) + cross-attention fusion.
+        'arcfaultnet_v2': lambda: ArcFaultNetV2(in_channels=4, spec_in_channels=1),
     }
     
     if model_name not in models:

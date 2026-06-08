@@ -1128,8 +1128,13 @@ def main():
 
     parser.add_argument('--model', type=str, default='arcfaultnet',
                         choices=['arcfaultnet', '1d_only', 'no_attention',
-                                 'standard_conv', 'independent_cbam', 'baseline_cnn'],
+                                 'standard_conv', 'independent_cbam', 'baseline_cnn',
+                                 'arcfaultnet_v2'],
                         help='Model to train')
+    parser.add_argument('--channel-mode', type=str, default='auto',
+                        choices=['auto', 'raw2', 'i_derived4'],
+                        help="1D front-end channels. 'auto' = i_derived4 for "
+                             "arcfaultnet_v2, else raw2.")
     parser.add_argument('--mode', type=str, default='single',
                         choices=['cv', 'single', 'kfold', 'groupkfold'],
                         help='cv = leave-one-charge-out | single = random split | kfold = stratified K-fold | groupkfold = group-based K-fold')
@@ -1187,9 +1192,16 @@ def main():
         print("Run: python step2_build_multichannel.py")
         return
 
+    # Resolve channel mode (V2 uses the 4 I-derived channels by default)
+    if args.channel_mode == 'auto':
+        channel_mode = 'i_derived4' if args.model == 'arcfaultnet_v2' else 'raw2'
+    else:
+        channel_mode = args.channel_mode
+
     dataset    = ArcFaultDataset(data_dir=str(data_dir),
                                   n_fft=args.n_fft,
-                                  hop_length=args.hop_length)
+                                  hop_length=args.hop_length,
+                                  channel_mode=channel_mode)
     output_dir = Path(args.output_dir)
 
     # Resolve fs: CLI override > auto-detected from config.json

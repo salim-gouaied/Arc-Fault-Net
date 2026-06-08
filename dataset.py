@@ -15,6 +15,7 @@ Features:
 """
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset
 import numpy as np
 from pathlib import Path
@@ -40,7 +41,8 @@ class ArcFaultDataset(Dataset):
         hop_length: int = 256,
         compute_stft: bool = True,
         device: str = 'cpu',
-        training: bool = False
+        training: bool = False,
+        channel_mode: str = 'raw2'
     ):
         """
         Args:
@@ -49,6 +51,14 @@ class ArcFaultDataset(Dataset):
             hop_length: Hop size for STFT
             compute_stft: If True, compute STFT on-the-fly. If False, return only 1D.
             device: Device for STFT computation ('cpu' or 'cuda')
+            channel_mode: Front-end representation for the 1D branch.
+                'raw2'      -> V1 behaviour: 2 raw channels [V_ligne, I],
+                               STFT computed on both channels.
+                'i_derived4'-> Arc-FaultNet V2 front-end: 4 physically
+                               complementary channels derived from I(t) only
+                               [I, |dI|, TKEO(I), RMS_slide(I)]; STFT computed
+                               on I(t) only (1 spectral channel). V(t) is used
+                               outside the model (segmentation) and never fed in.
         """
         self.data_dir = Path(data_dir)
         self.n_fft = n_fft
@@ -56,6 +66,9 @@ class ArcFaultDataset(Dataset):
         self.compute_stft = compute_stft
         self.device = device
         self.training = training  # Controls augmentation
+        if channel_mode not in ('raw2', 'i_derived4'):
+            raise ValueError(f"channel_mode must be 'raw2' or 'i_derived4', got {channel_mode!r}")
+        self.channel_mode = channel_mode
         
         # Load data
         self.X = np.load(self.data_dir / 'X_multi.npy')  # (N, 2, seq_len) — [V_ligne, I]
@@ -67,12 +80,24 @@ class ArcFaultDataset(Dataset):
         
         # Read sampling frequency from config.json (auto-detect 1 MHz vs 102.4 kHz)
         config_path = self.data_dir / 'config.json'
+        channel_names = None
         if config_path.exists():
             with open(config_path, 'r') as f:
                 cfg = json.load(f)
             self.fs = cfg.get('FS', 1_000_000)
+            channel_names = cfg.get('channel_names')
         else:
             self.fs = 1_000_000
+
+        # Locate the current channel (I) — it carries the arc signature.
+        # Default to the conventional [V_ligne, I] ordering (I = last channel).
+        if channel_names and 'I' in channel_names:
+            self.i_channel = channel_names.index('I')
+        else:
+            self.i_channel = self.n_channels - 1
+
+        # Number of channels the 1D branch will actually receive
+        self.out_channels = 4 if self.channel_mode == 'i_derived4' else self.n_channels
         
         # Load charges (optional — may not exist for new datasets)
         charges_path = self.data_dir / 'charges.npy'
@@ -107,6 +132,9 @@ class ArcFaultDataset(Dataset):
         print(f"  Samples: {self.n_samples}")
         print(f"  Input shape: {self.X.shape}")
         print(f"  Sampling freq: {self.fs:,} Hz  (seq_len={self.seq_len})")
+        print(f"  Channel mode: {self.channel_mode}  ->  1D branch in_channels={self.out_channels}")
+        if self.channel_mode == 'i_derived4':
+            print(f"    derived from I (channel {self.i_channel}): [I, |dI|, TKEO, RMS_slide]; STFT on I only")
         print(f"  STFT shape per channel: ({self.n_freq}, {self.n_time})  [n_fft={n_fft}, hop={hop_length}]")
         print(f"  Charges: {self.n_charges}")
         print(f"  Label distribution: {np.sum(self.y==0)} normal, {np.sum(self.y==1)} arc")
@@ -116,24 +144,70 @@ class ArcFaultDataset(Dataset):
     
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # Get raw data
-        x_1d = torch.from_numpy(self.X[idx]).float()  # (2, 20000)
+        x_raw = torch.from_numpy(self.X[idx]).float()  # (n_channels, seq_len) — [V_ligne, I]
         label = torch.tensor(self.y[idx], dtype=torch.float32)
         charge_idx = torch.tensor(self.charges[idx], dtype=torch.long)
-        
-        # Apply temporal augmentation during training
+
+        # Apply temporal augmentation on the RAW signal first (physical realism)
         if self.training:
-            x_1d = self._augment_temporal(x_1d)
-        
+            x_raw = self._augment_temporal(x_raw)
+
+        if self.channel_mode == 'i_derived4':
+            # ── V2 front-end: 4 channels derived from I(t) only ──────────
+            i_sig = x_raw[self.i_channel]                  # (seq_len,)
+            x_1d = self._derive_i_channels(i_sig)          # (4, seq_len)
+            stft_src = i_sig.unsqueeze(0)                  # (1, seq_len) — STFT of I only
+        else:
+            # ── V1 front-end: raw channels [V_ligne, I] ──────────────────
+            x_1d = x_raw                                    # (n_channels, seq_len)
+            stft_src = x_raw                                # STFT on all channels
+
         # Compute STFT for 2D branch
         if self.compute_stft:
-            x_2d = self._compute_stft(x_1d)  # (2, n_freq, n_time)
-            # Apply spectrogram augmentation during training
+            x_2d = self._compute_stft(stft_src)            # (C_spec, n_freq, n_time)
             if self.training:
                 x_2d = self._augment_spectrogram(x_2d)
         else:
             x_2d = torch.zeros(1)  # placeholder
-        
+
         return x_1d, x_2d, label, charge_idx
+
+    def _derive_i_channels(self, i_sig: torch.Tensor) -> torch.Tensor:
+        """
+        Build the 4 physically-complementary channels from I(t) (Arc-FaultNet V2).
+
+        All channels share length M (= seq_len) and are normalised by the RAW
+        cycle's RMS so that their RELATIVE magnitudes stay physically meaningful
+        (load-invariant) — never use a global dataset normalisation here.
+
+        Channels:
+          0. I_norm          : raw waveform                       (global shape)
+          1. |dI|            : |sample-to-sample derivative|      (local discontinuities / arc spikes)
+          2. TKEO(I)         : I[n]^2 - I[n-1]*I[n+1]             (instantaneous energy, sub-cycle ignition/extinction)
+          3. RMS_slide(I)    : sliding RMS over a M/4 window      (amplitude envelope: flat shoulder / current dip)
+        """
+        M = i_sig.shape[0]
+        rms = torch.sqrt(torch.mean(i_sig ** 2) + 1e-12)
+        i_norm = i_sig / rms
+
+        # 1. |dI| — abs of discrete derivative, right-padded by 1 to keep length M
+        d = i_norm[1:] - i_norm[:-1]
+        abs_di = torch.cat([d.abs(), d.abs()[-1:]], dim=0)         # (M,)
+
+        # 2. TKEO — I[n]^2 - I[n-1]*I[n+1], edges padded by replication (length M)
+        tkeo_core = i_norm[1:-1] ** 2 - i_norm[:-2] * i_norm[2:]   # (M-2,)
+        tkeo = torch.cat([tkeo_core[:1], tkeo_core, tkeo_core[-1:]], dim=0)  # (M,)
+
+        # 3. RMS_slide — centered sliding RMS over window M/4 (reflect-padded → length M)
+        win = max(2, M // 4)
+        sq = (i_norm ** 2).unsqueeze(0).unsqueeze(0)               # (1,1,M)
+        pad_l = win // 2
+        pad_r = win - 1 - pad_l
+        sq_pad = F.pad(sq, (pad_l, pad_r), mode='reflect')
+        kernel = torch.ones(1, 1, win, device=i_sig.device) / win
+        rms_slide = torch.sqrt(F.conv1d(sq_pad, kernel) + 1e-12).squeeze(0).squeeze(0)  # (M,)
+
+        return torch.stack([i_norm, abs_di, tkeo, rms_slide], dim=0)  # (4, M)
     
     def _augment_temporal(self, x: torch.Tensor) -> torch.Tensor:
         """
