@@ -1249,6 +1249,14 @@ def build_model_from_checkpoint(ckpt_path, device='cpu', fs: float = 1_000_000, 
     """
     sd = torch.load(ckpt_path, map_location='cpu')
 
+    # Detect if V2
+    if 'temporal.features.0.weight' in sd or 'cross_attn.fusion.0.weight' in sd:
+        print("  Detected: ArcFaultNetV2 architecture")
+        model = ArcFaultNetV2(in_channels=4, spec_in_channels=1)
+        model.load_state_dict(sd)
+        model.to(device).eval()
+        return model
+
     # Detect hidden_dims from fusion weight shape [C, 2C, 1]
     C = sd['joint_attn.fusion.weight'].shape[0]
 

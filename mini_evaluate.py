@@ -217,9 +217,12 @@ def main():
     print(f"  Data:   {data_dir}")
     print(f"{'='*55}")
 
+    model_name = cfg.get('model_name', 'arcfaultnet')
+    channel_mode = 'i_derived4' if model_name == 'arcfaultnet_v2' else 'raw2'
+
     # Dataset + split (loaded first so we can auto-detect fs)
     print("\n[1/4] Loading dataset …")
-    ds = ArcFaultDataset(data_dir=data_dir, n_fft=n_fft, hop_length=hop_length)
+    ds = ArcFaultDataset(data_dir=data_dir, n_fft=n_fft, hop_length=hop_length, channel_mode=channel_mode)
     import random
     random.seed(seed); np.random.seed(seed)
     torch.manual_seed(seed)
