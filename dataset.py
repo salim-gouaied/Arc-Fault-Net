@@ -20,6 +20,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 import numpy as np
 from pathlib import Path
 import json
+import csv
 from typing import Tuple, List, Optional
 
 
@@ -56,9 +57,12 @@ class ArcFaultDataset(Dataset):
                                STFT computed on both channels.
                 'i_derived4'-> Arc-FaultNet V2 front-end: 4 physically
                                complementary channels derived from I(t) only
-                               [I, |dI|, TKEO(I), RMS_slide(I)]; STFT computed
-                               on I(t) only (1 spectral channel). V(t) is used
-                               outside the model (segmentation) and never fed in.
+                               [I, ΔI_Dowalla, TKEO(I), RMS_slide(I)]; STFT
+                               computed on I(t) only (1 spectral channel).
+                               ΔI_Dowalla is the Dowalla inter-cycle residual:
+                               residual_k = I_k − I_{k−1}, zero for stable
+                               (non-arc) waveforms.  V(t) is used outside the
+                               model (segmentation) and never fed in.
         """
         self.data_dir = Path(data_dir)
         self.n_fft = n_fft
@@ -98,6 +102,12 @@ class ArcFaultDataset(Dataset):
 
         # Number of channels the 1D branch will actually receive
         self.out_channels = 4 if self.channel_mode == 'i_derived4' else self.n_channels
+
+        # ── Build previous-cycle lookup for Dowalla inter-cycle residual ──
+        # For each sample index i, _prev_cycle_idx[i] gives the index in
+        # self.X of the immediately preceding cycle from the SAME recording
+        # session, or -1 if no previous cycle is available.
+        self._prev_cycle_idx = self._build_prev_cycle_lookup()
         
         # Load charges (optional — may not exist for new datasets)
         charges_path = self.data_dir / 'charges.npy'
@@ -134,7 +144,9 @@ class ArcFaultDataset(Dataset):
         print(f"  Sampling freq: {self.fs:,} Hz  (seq_len={self.seq_len})")
         print(f"  Channel mode: {self.channel_mode}  ->  1D branch in_channels={self.out_channels}")
         if self.channel_mode == 'i_derived4':
-            print(f"    derived from I (channel {self.i_channel}): [I, |dI|, TKEO, RMS_slide]; STFT on I only")
+            n_with_prev = int((self._prev_cycle_idx >= 0).sum())
+            print(f"    derived from I (channel {self.i_channel}): [I, ΔI_Dowalla, TKEO, RMS_slide]; STFT on I only")
+            print(f"    Dowalla residual: {n_with_prev}/{self.n_samples} samples have a previous cycle")
         print(f"  STFT shape per channel: ({self.n_freq}, {self.n_time})  [n_fft={n_fft}, hop={hop_length}]")
         print(f"  Charges: {self.n_charges}")
         print(f"  Label distribution: {np.sum(self.y==0)} normal, {np.sum(self.y==1)} arc")
@@ -155,7 +167,15 @@ class ArcFaultDataset(Dataset):
         if self.channel_mode == 'i_derived4':
             # ── V2 front-end: 4 channels derived from I(t) only ──────────
             i_sig = x_raw[self.i_channel]                  # (seq_len,)
-            x_1d = self._derive_i_channels(i_sig)          # (4, seq_len)
+            # Retrieve previous cycle for Dowalla inter-cycle residual
+            prev_idx = self._prev_cycle_idx[idx]
+            if prev_idx >= 0:
+                i_prev = torch.from_numpy(
+                    self.X[prev_idx, self.i_channel].copy()
+                ).float()
+            else:
+                i_prev = None  # first cycle → residual = 0
+            x_1d = self._derive_i_channels(i_sig, i_prev)  # (4, seq_len)
             stft_src = i_sig.unsqueeze(0)                  # (1, seq_len) — STFT of I only
         else:
             # ── V1 front-end: raw channels [V_ligne, I] ──────────────────
@@ -172,7 +192,71 @@ class ArcFaultDataset(Dataset):
 
         return x_1d, x_2d, label, charge_idx
 
-    def _derive_i_channels(self, i_sig: torch.Tensor) -> torch.Tensor:
+    def _build_prev_cycle_lookup(self) -> np.ndarray:
+        """
+        Build a lookup array mapping each sample index to the index of its
+        immediately preceding cycle from the same recording session.
+
+        Uses metadata columns (dataset, exp_name, alt_index) to identify
+        consecutive cycles. Returns an int32 array of length N where
+        ``lookup[i] = j`` means sample j is the previous cycle for sample i,
+        and ``lookup[i] = -1`` when no previous cycle is available (first
+        cycle of a recording, or predecessor excluded by three-zone labeling).
+        """
+        meta_path = self.data_dir / 'metadata.csv'
+        lookup = np.full(self.n_samples, -1, dtype=np.int32)
+
+        if not meta_path.exists():
+            return lookup
+
+        with open(meta_path, newline='') as f:
+            rows = list(csv.DictReader(f))
+
+        if len(rows) != self.n_samples:
+            print(f"  WARNING: metadata.csv rows ({len(rows)}) != X size ({self.n_samples})")
+            print(f"           → Dowalla residual disabled (all zeros).")
+            return lookup
+
+        # Determine grouping columns present in the metadata
+        if 'dataset' in rows[0] and 'exp_name' in rows[0]:
+            group_key = lambda r: (r['dataset'], r['exp_name'])
+        elif 'exp_name' in rows[0]:
+            group_key = lambda r: r['exp_name']
+        elif 'exp_id' in rows[0]:
+            fnum = 'file_num' if 'file_num' in rows[0] else None
+            group_key = lambda r: (r.get('source_dir', ''), r['exp_id'], r.get(fnum, '') if fnum else '')
+        else:
+            return lookup
+
+        # Group by recording session, tracking (global_index, alt_index)
+        groups: dict = {}
+        for i, r in enumerate(rows):
+            groups.setdefault(group_key(r), []).append(
+                (i, int(r['alt_index']))
+            )
+
+        # Within each group, sort by alt_index and link each cycle to the
+        # one with the nearest smaller alt_index (ideally alt_index − 1).
+        for entries in groups.values():
+            entries.sort(key=lambda t: t[1])  # sort by alt_index
+            for pos in range(1, len(entries)):
+                cur_global, cur_alt = entries[pos]
+                prev_global, prev_alt = entries[pos - 1]
+                # Only link if the predecessor is *exactly* one alt_index away;
+                # a gap > 1 means intermediate cycles were excluded (label
+                # ambiguity zone) and the waveform difference would span
+                # multiple physical cycles — still useful but noisier.
+                # We accept gaps ≤ 2 to maximise coverage.
+                if cur_alt - prev_alt <= 2:
+                    lookup[cur_global] = prev_global
+
+        return lookup
+
+    def _derive_i_channels(
+        self,
+        i_sig: torch.Tensor,
+        i_prev: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Build the 4 physically-complementary channels from I(t) (Arc-FaultNet V2).
 
@@ -182,17 +266,31 @@ class ArcFaultDataset(Dataset):
 
         Channels:
           0. I_norm          : raw waveform                       (global shape)
-          1. |dI|            : |sample-to-sample derivative|      (local discontinuities / arc spikes)
+          1. ΔI_Dowalla      : inter-cycle residual I_k − I_{k−1} (Dowalla)
+                               — zero for stable waveforms (no arc), reveals
+                               localized dips near zero-crossing for resistive
+                               loads, isolates impulsive spikes for SMPS loads,
+                               and attenuates repeatable motor micro-arcs by
+                               cycle-to-cycle subtraction.
           2. TKEO(I)         : I[n]^2 - I[n-1]*I[n+1]             (instantaneous energy, sub-cycle ignition/extinction)
           3. RMS_slide(I)    : sliding RMS over a M/4 window      (amplitude envelope: flat shoulder / current dip)
+
+        Args:
+            i_sig:  (M,) current waveform of the current cycle
+            i_prev: (M,) current waveform of the previous cycle, or None if
+                    this is the first cycle of a recording (residual → zeros).
         """
         M = i_sig.shape[0]
         rms = torch.sqrt(torch.mean(i_sig ** 2) + 1e-12)
         i_norm = i_sig / rms
 
-        # 1. |dI| — abs of discrete derivative, right-padded by 1 to keep length M
-        d = i_norm[1:] - i_norm[:-1]
-        abs_di = torch.cat([d.abs(), d.abs()[-1:]], dim=0)         # (M,)
+        # 1. Dowalla inter-cycle residual: I_k − I_{k−1} (normalised)
+        if i_prev is not None:
+            rms_prev = torch.sqrt(torch.mean(i_prev ** 2) + 1e-12)
+            i_prev_norm = i_prev / rms_prev
+            dowalla_residual = i_norm - i_prev_norm                   # (M,)
+        else:
+            dowalla_residual = torch.zeros_like(i_norm)               # (M,)
 
         # 2. TKEO — I[n]^2 - I[n-1]*I[n+1], edges padded by replication (length M)
         tkeo_core = i_norm[1:-1] ** 2 - i_norm[:-2] * i_norm[2:]   # (M-2,)
@@ -207,7 +305,7 @@ class ArcFaultDataset(Dataset):
         kernel = torch.ones(1, 1, win, device=i_sig.device) / win
         rms_slide = torch.sqrt(F.conv1d(sq_pad, kernel) + 1e-12).squeeze(0).squeeze(0)  # (M,)
 
-        return torch.stack([i_norm, abs_di, tkeo, rms_slide], dim=0)  # (4, M)
+        return torch.stack([i_norm, dowalla_residual, tkeo, rms_slide], dim=0)  # (4, M)
     
     def _augment_temporal(self, x: torch.Tensor) -> torch.Tensor:
         """

@@ -912,8 +912,9 @@ class BaselineCNN(nn.Module):
 #  Design notes (see ablation_results/ArcFaultNet_V2 spec):
 #    * Input is a SINGLE 50 Hz cycle (M samples, e.g. 2048 @ 102.4 kHz).
 #    * The temporal branch consumes 4 physically-derived channels built from
-#      I(t) only: [I, |dI|, TKEO(I), RMS_slide(I)] — produced in dataset.py.
-#      V(t) is used outside the model (segmentation); V_arc only for labels.
+#      I(t) only: [I, ΔI_Dowalla, TKEO(I), RMS_slide(I)] — produced in dataset.py.
+#      ΔI_Dowalla is the Dowalla inter-cycle residual: I_k − I_{k−1}, which is
+#      zero for stable (non-arc) waveforms and highlights arc perturbations.
 #    * Gabor / ParametricConv1d is intentionally REMOVED: the arc is aperiodic
 #      and impulsive, so plain Conv1d filters are the correct prior.
 #    * The spectral branch is revised: a learnable soft FrequencyGate replaces
@@ -1134,7 +1135,7 @@ class ArcFaultNetV2(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            x_1d: (B, 4, M)        — derived channels [I, |dI|, TKEO, RMS_slide]
+            x_1d: (B, 4, M)        — derived channels [I, ΔI_Dowalla, TKEO, RMS_slide]
             x_2d: (B, 1, F, T)     — log-power STFT of I(t)
             return_embedding: if True, also return the fused 128-d embedding
         Returns:
