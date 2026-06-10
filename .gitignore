@@ -42,7 +42,8 @@ runs/arcfaultnet_single_20260504_114636/*
 !runs/arcfaultnet_single_20260522_114209/eval
 !runs/arcfaultnet_single_20260522_114209/resultsOnHeldOut/
 !runs/arcfaultnet_single_20260522_114209/results.json
-
+runs/arcfaultnet_v2_single_20260609_115000
+runs/arcfaultnet_v2_groupkfold_recording_20260609_114944
 # ── Résultats d'ablation et exports générés ─────────────
 
 exports/
