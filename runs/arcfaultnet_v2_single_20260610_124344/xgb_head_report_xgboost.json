@@ -1,0 +1,23 @@
+{
+  "checkpoint": "runs/arcfaultnet_v2_single_20260610_124344/best_single.pt",
+  "data_dir": "combined_dataset_2048",
+  "classifier": "xgboost",
+  "split": "single",
+  "seed": 42,
+  "threshold": 0.9,
+  "n_train": 7601,
+  "n_val": 1629,
+  "n_test": 1630,
+  "test_metrics": {
+    "accuracy": 0.5355828220858893,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "specificity": 0.9999999999999988,
+    "auc_roc": 0.9969539736797903,
+    "tp": 0,
+    "fp": 0,
+    "fn": 757,
+    "tn": 873
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "models": [
+    "runs/arcfaultnet_v2_single_20260610_124344",
+    "runs/arcfaultnet_v2_single_20260610_124945",
+    "runs/arcfaultnet_v2_single_20260610_123920",
+    "runs/arcfaultnet_v2_single_20260610_130056"
+  ],
+  "n_models": 4,
+  "baseline_t05": {
+    "accuracy": 0.9760736196319013,
+    "precision": 0.9958563535911588,
+    "recall": 0.9524438573315707,
+    "f1": 0.9736664415935173,
+    "specificity": 0.9965635738831603,
+    "tp": 721,
+    "fp": 3,
+    "fn": 36,
+    "tn": 870
+  },
+  "optimized_threshold": {
+    "threshold": 0.3,
+    "accuracy": 0.98282208588957,
+    "precision": 0.9932341001353167,
+    "recall": 0.9696169088507253,
+    "f1": 0.9812834224598924,
+    "specificity": 0.9942726231386013,
+    "tp": 734,
+    "fp": 5,
+    "fn": 23,
+    "tn": 868
+  },
+  "ensemble_avg_t05": {
+    "accuracy": 0.9834355828220853,
+    "precision": 0.9945799457994566,
+    "recall": 0.9696169088507253,
+    "f1": 0.9819397993311031,
+    "specificity": 0.9954180985108808,
+    "tp": 734,
+    "fp": 4,
+    "fn": 23,
+    "tn": 869
+  },
+  "ensemble_majority": {
+    "accuracy": 0.9785276073619626,
+    "precision": 0.9972451790633595,
+    "recall": 0.9564068692206064,
+    "f1": 0.9763991908293993,
+    "specificity": 0.9977090492554398,
+    "tp": 724,
+    "fp": 2,
+    "fn": 33,
+    "tn": 871
+  },
+  "ensemble_unanimous": {
+    "accuracy": 0.9711656441717786,
+    "precision": 0.9999999999999986,
+    "recall": 0.9379128137384399,
+    "f1": 0.9679618268575317,
+    "specificity": 0.9999999999999988,
+    "tp": 710,
+    "fp": 0,
+    "fn": 47,
+    "tn": 873
+  }
+}
