@@ -1149,6 +1149,297 @@ class ArcFaultNetV2(nn.Module):
         return logits
 
 
+class SpectralBranchV2_NoGate(nn.Module):
+    """
+    Ablation variant of SpectralBranchV2 without the learnable FrequencyGate.
+    Applies Conv2d directly on the raw STFT spectrogram to ensure absolutely
+    no attention mechanisms are present.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4
+    ):
+        super().__init__()
+        self.output_dim = output_dim
+        self.freq_groups = freq_groups
+
+        c0, c1, c2 = hidden_dims
+
+        self.block1 = nn.Sequential(
+            nn.Conv2d(in_channels, c0, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c0), nn.GELU(),
+            nn.MaxPool2d(kernel_size=(1, 4)),
+        )
+        self.block2 = nn.Sequential(
+            nn.Conv2d(c0, c1, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c1), nn.GELU(),
+            nn.MaxPool2d(kernel_size=(2, 4)),
+        )
+        self.block3 = nn.Sequential(
+            nn.Conv2d(c1, c2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c2), nn.GELU(),
+        )
+        self.adaptive = nn.AdaptiveAvgPool2d((freq_groups, output_dim))
+        self.proj = nn.Conv1d(c2 * freq_groups, c2, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # NO freq_gate applied here!
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.adaptive(x)
+        b, c, g, d = x.shape
+        x = x.reshape(b, c * g, d)
+        return self.proj(x)
+
+
+# ═══════════════════════════════════════════════════════
+#  ARC-FAULTNET V2 — ABLATION VARIANTS
+# ═══════════════════════════════════════════════════════
+
+class ArcFaultNetV2_NoAttention(nn.Module):
+    """
+    Ablation: Dual-branch V2 WITHOUT cross-attention.
+
+    Both branches extract features independently; their GAP vectors are
+    concatenated and fed to a simple FC fusion layer — no channel gating,
+    no mutual conditioning.  This answers: *does the attention mechanism
+    add anything over naive concatenation?*
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        spec_in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4,
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        C = hidden_dims[-1]
+
+        self.temporal = TemporalBranchV2(
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+        )
+        self.spectral = SpectralBranchV2_NoGate(
+            in_channels=spec_in_channels, hidden_dims=hidden_dims,
+            output_dim=output_dim, freq_groups=freq_groups
+        )
+        # Simple concat + linear (no gating)
+        self.fusion = nn.Sequential(
+            nn.Linear(C * 2, C), nn.GELU()
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor,
+                return_embedding: bool = False) -> torch.Tensor:
+        f_t = self.temporal(x_1d).mean(dim=-1)   # (B, C)
+        f_s = self.spectral(x_2d).mean(dim=-1)   # (B, C)
+        emb = self.fusion(torch.cat([f_t, f_s], dim=-1))  # (B, C)
+        logits = self.classifier(emb).squeeze(-1)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
+class ArcFaultNetV2_NoChanGate(nn.Module):
+    """
+    Ablation: Cross-attention WITHOUT channel gating.
+
+    The two branch vectors are concatenated and fused through a single FC
+    layer (like NoAttention), but preceded by a shared self-attention over
+    the concatenated sequence — keeping the spatial/temporal attention but
+    removing the per-branch channel gate (sigmoid conditioning).
+
+    This answers: *is it specifically the channel gating that matters, or
+    just having any fusion mechanism?*
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        spec_in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4,
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        C = hidden_dims[-1]
+
+        self.temporal = TemporalBranchV2(
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+        )
+        self.spectral = SpectralBranchV2(
+            in_channels=spec_in_channels, hidden_dims=hidden_dims,
+            output_dim=output_dim, freq_groups=freq_groups
+        )
+        # Fusion WITHOUT gating: just concat → 2-layer MLP (same param count as gated)
+        self.fusion = nn.Sequential(
+            nn.Linear(C * 2, C * 2), nn.GELU(),
+            nn.Linear(C * 2, C), nn.GELU()
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor,
+                return_embedding: bool = False) -> torch.Tensor:
+        f_t = self.temporal(x_1d).mean(dim=-1)
+        f_s = self.spectral(x_2d).mean(dim=-1)
+        emb = self.fusion(torch.cat([f_t, f_s], dim=-1))
+        logits = self.classifier(emb).squeeze(-1)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
+class ArcFaultNetV2_TemporalOnly(nn.Module):
+    """
+    Ablation: ONLY the temporal branch (no spectral / STFT).
+
+    The spectral branch is completely removed.  The temporal features
+    go through GAP → FC head directly.
+
+    This answers: *what does the spectral branch add?*
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        C = hidden_dims[-1]
+
+        self.temporal = TemporalBranchV2(
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None,
+                return_embedding: bool = False) -> torch.Tensor:
+        emb = self.temporal(x_1d).mean(dim=-1)   # (B, C)
+        logits = self.classifier(emb).squeeze(-1)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
+class ArcFaultNetV2_SpectralOnly(nn.Module):
+    """
+    Ablation: ONLY the spectral branch (no temporal / 1D convolutions).
+
+    The temporal branch is completely removed.  The spectral features
+    go through GAP → FC head directly.
+
+    This answers: *what does the temporal branch add?*
+    """
+
+    def __init__(
+        self,
+        spec_in_channels: int = 1,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        output_dim: int = 64,
+        freq_groups: int = 4,
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        C = hidden_dims[-1]
+
+        self.spectral = SpectralBranchV2(
+            in_channels=spec_in_channels, hidden_dims=hidden_dims,
+            output_dim=output_dim, freq_groups=freq_groups
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def forward(self, x_1d: torch.Tensor = None, x_2d: torch.Tensor = None,
+                return_embedding: bool = False) -> torch.Tensor:
+        # x_2d is required; x_1d is ignored
+        emb = self.spectral(x_2d).mean(dim=-1)   # (B, C)
+        logits = self.classifier(emb).squeeze(-1)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
+class ArcFaultNetV2_BaselineCNN(nn.Module):
+    """
+    Ablation: Classic CNN baseline for the V2 data format.
+
+    Same convolutional backbone as TemporalBranchV2 (Conv1d × 3 + BN + GELU
+    + pooling) followed by GAP → FC.  NO spectral branch, NO attention,
+    NO frequency gating.
+
+    This answers: *is the full V2 architecture better than a plain CNN
+    with equivalent convolutional capacity?*
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        hidden_dims: Tuple[int, int, int] = (32, 64, 128),
+        kernel_sizes: Tuple[int, int, int] = (16, 8, 4),
+        classifier_hidden: int = 64,
+        dropout: float = 0.3
+    ):
+        super().__init__()
+        dims = [in_channels] + list(hidden_dims)
+        layers = []
+        for i in range(3):
+            layers += [
+                nn.Conv1d(dims[i], dims[i + 1],
+                          kernel_size=kernel_sizes[i],
+                          padding=kernel_sizes[i] // 2),
+                nn.BatchNorm1d(dims[i + 1]),
+                nn.GELU(),
+            ]
+            if i < 2:
+                layers.append(nn.MaxPool1d(4))
+        layers.append(nn.AdaptiveAvgPool1d(1))
+        self.features = nn.Sequential(*layers)
+
+        C = hidden_dims[-1]
+        self.classifier = nn.Sequential(
+            nn.Linear(C, classifier_hidden), nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(classifier_hidden, 1)
+        )
+
+    def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None,
+                return_embedding: bool = False) -> torch.Tensor:
+        emb = self.features(x_1d).squeeze(-1)    # (B, C)
+        logits = self.classifier(emb).squeeze(-1)
+        if return_embedding:
+            return logits, emb
+        return logits
+
+
 # ═══════════════════════════════════════════════════════
 #  MODEL FACTORY
 # ═══════════════════════════════════════════════════════
@@ -1217,6 +1508,12 @@ def get_model(
         # Arc-FaultNet V2 (single-cycle): 4 I-derived temporal channels + revised
         # spectral branch (STFT of I only) + cross-attention fusion.
         'arcfaultnet_v2': lambda: ArcFaultNetV2(in_channels=4, spec_in_channels=1),
+        # ── V2 ablation variants ──
+        'v2_no_attention':   lambda: ArcFaultNetV2_NoAttention(in_channels=4, spec_in_channels=1),
+        'v2_no_chan_gate':   lambda: ArcFaultNetV2_NoChanGate(in_channels=4, spec_in_channels=1),
+        'v2_temporal_only':  lambda: ArcFaultNetV2_TemporalOnly(in_channels=4),
+        'v2_spectral_only':  lambda: ArcFaultNetV2_SpectralOnly(spec_in_channels=1),
+        'v2_baseline_cnn':   lambda: ArcFaultNetV2_BaselineCNN(in_channels=4),
     }
     
     if model_name not in models:
