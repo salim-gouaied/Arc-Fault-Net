@@ -967,7 +967,9 @@ class SpectralBranchV2(nn.Module):
         in_channels: int = 1,
         hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         output_dim: int = 64,
-        freq_groups: int = 4
+        freq_groups: int = 4,
+        use_se: bool = False,
+        se_reduction: int = 8
     ):
         super().__init__()
         self.output_dim = output_dim
@@ -976,20 +978,33 @@ class SpectralBranchV2(nn.Module):
         c0, c1, c2 = hidden_dims
         self.freq_gate = FrequencyGate(in_channels)
 
-        self.block1 = nn.Sequential(
+        # Build blocks with optional SE attention after each conv
+        block1_layers = [
             nn.Conv2d(in_channels, c0, kernel_size=3, padding=1),
             nn.BatchNorm2d(c0), nn.GELU(),
-            nn.MaxPool2d(kernel_size=(1, 4)),           # time only
-        )
-        self.block2 = nn.Sequential(
+        ]
+        if use_se:
+            block1_layers.append(SEBlock(c0, reduction=se_reduction))
+        block1_layers.append(nn.MaxPool2d(kernel_size=(2, 1)))  # freq only (preserve time)
+        self.block1 = nn.Sequential(*block1_layers)
+
+        block2_layers = [
             nn.Conv2d(c0, c1, kernel_size=3, padding=1),
             nn.BatchNorm2d(c1), nn.GELU(),
-            nn.MaxPool2d(kernel_size=(2, 4)),           # moderate freq, aggressive time
-        )
-        self.block3 = nn.Sequential(
+        ]
+        if use_se:
+            block2_layers.append(SEBlock(c1, reduction=se_reduction))
+        block2_layers.append(nn.MaxPool2d(kernel_size=(2, 1)))  # freq only (preserve time)
+        self.block2 = nn.Sequential(*block2_layers)
+
+        block3_layers = [
             nn.Conv2d(c1, c2, kernel_size=3, padding=1),
             nn.BatchNorm2d(c2), nn.GELU(),
-        )
+        ]
+        if use_se:
+            block3_layers.append(SEBlock(c2, reduction=se_reduction))
+        self.block3 = nn.Sequential(*block3_layers)
+
         # Keep `freq_groups` frequency bands and `output_dim` time positions
         self.adaptive = nn.AdaptiveAvgPool2d((freq_groups, output_dim))
         # Collapse the (C * freq_groups) channels back to C
@@ -1018,6 +1033,9 @@ class TemporalBranchV2(nn.Module):
 
     Plain Conv1d (NO Gabor) with GELU — the filters learn arc-specific delta
     shapes directly from data without imposing a frequency-oscillation prior.
+
+    Optional SE blocks add channel-wise attention after each conv layer,
+    helping the network focus on the most informative derived channels.
     """
 
     def __init__(
@@ -1025,7 +1043,9 @@ class TemporalBranchV2(nn.Module):
         in_channels: int = 4,
         hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         kernel_sizes: Tuple[int, int, int] = (16, 8, 4),
-        output_dim: int = 64
+        output_dim: int = 64,
+        use_se: bool = False,
+        se_reduction: int = 8
     ):
         super().__init__()
         self.output_dim = output_dim
@@ -1039,6 +1059,8 @@ class TemporalBranchV2(nn.Module):
                 nn.BatchNorm1d(dims[i + 1]),
                 nn.GELU(),
             ]
+            if use_se:
+                layers.append(SEBlock(dims[i + 1], reduction=se_reduction))
             if i < 2:
                 layers.append(nn.MaxPool1d(4))
         self.features = nn.Sequential(*layers)
@@ -1100,26 +1122,44 @@ class ArcFaultNetV2(nn.Module):
         output_dim: int = 64,
         freq_groups: int = 4,
         classifier_hidden: int = 64,
-        dropout: float = 0.3
+        dropout: float = 0.3,
+        use_se: bool = False,
+        se_reduction: int = 8,
+        deep_classifier: bool = False
     ):
         super().__init__()
         C = hidden_dims[-1]
 
         self.temporal = TemporalBranchV2(
-            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim,
+            use_se=use_se, se_reduction=se_reduction
         )
         self.spectral = SpectralBranchV2(
             in_channels=spec_in_channels, hidden_dims=hidden_dims,
-            output_dim=output_dim, freq_groups=freq_groups
+            output_dim=output_dim, freq_groups=freq_groups,
+            use_se=use_se, se_reduction=se_reduction
         )
         self.cross_attn = RevisedCrossAttention(channels=C)
 
-        # Phase-1 FC head (placeholder — discarded when the XGBoost head is used)
-        self.classifier = nn.Sequential(
-            nn.Linear(C, classifier_hidden), nn.GELU(),
-            nn.Dropout(dropout),                       # single, well-placed dropout
-            nn.Linear(classifier_hidden, 1)
-        )
+        # Classifier head — deep variant adds BN + heavier dropout for stability
+        if deep_classifier:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden),
+                nn.BatchNorm1d(classifier_hidden),
+                nn.GELU(),
+                nn.Dropout(0.5),
+                nn.Linear(classifier_hidden, classifier_hidden // 2),
+                nn.BatchNorm1d(classifier_hidden // 2),
+                nn.GELU(),
+                nn.Dropout(0.3),
+                nn.Linear(classifier_hidden // 2, 1)
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden), nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(classifier_hidden, 1)
+            )
 
     def extract_embedding(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         """Return the fused 128-d embedding (input to Stage 5)."""
@@ -1172,12 +1212,12 @@ class SpectralBranchV2_NoGate(nn.Module):
         self.block1 = nn.Sequential(
             nn.Conv2d(in_channels, c0, kernel_size=3, padding=1),
             nn.BatchNorm2d(c0), nn.GELU(),
-            nn.MaxPool2d(kernel_size=(1, 4)),
+            nn.MaxPool2d(kernel_size=(2, 1)),           # freq only (preserve time)
         )
         self.block2 = nn.Sequential(
             nn.Conv2d(c0, c1, kernel_size=3, padding=1),
             nn.BatchNorm2d(c1), nn.GELU(),
-            nn.MaxPool2d(kernel_size=(2, 4)),
+            nn.MaxPool2d(kernel_size=(2, 1)),           # freq only (preserve time)
         )
         self.block3 = nn.Sequential(
             nn.Conv2d(c1, c2, kernel_size=3, padding=1),
@@ -1507,7 +1547,11 @@ def get_model(
         'baseline_cnn': lambda: BaselineCNN(in_channels=in_channels),
         # Arc-FaultNet V2 (single-cycle): 4 I-derived temporal channels + revised
         # spectral branch (STFT of I only) + cross-attention fusion.
-        'arcfaultnet_v2': lambda: ArcFaultNetV2(in_channels=4, spec_in_channels=1),
+        'arcfaultnet_v2': lambda: ArcFaultNetV2(
+            in_channels=4, spec_in_channels=1,
+            use_se=use_se, se_reduction=se_reduction,
+            deep_classifier=deep_classifier
+        ),
         # ── V2 ablation variants ──
         'v2_no_attention':   lambda: ArcFaultNetV2_NoAttention(in_channels=4, spec_in_channels=1),
         'v2_no_chan_gate':   lambda: ArcFaultNetV2_NoChanGate(in_channels=4, spec_in_channels=1),
