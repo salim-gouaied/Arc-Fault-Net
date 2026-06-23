@@ -1594,7 +1594,12 @@ def build_model_from_checkpoint(ckpt_path, device='cpu', fs: float = 1_000_000, 
     # Detect if V2
     if 'temporal.features.0.weight' in sd or 'cross_attn.fusion.0.weight' in sd:
         print("  Detected: ArcFaultNetV2 architecture")
-        model = ArcFaultNetV2(in_channels=4, spec_in_channels=1)
+        use_se = 'temporal.features.3.fc.0.weight' in sd
+        deep_classifier = 'classifier.4.weight' in sd or 'classifier.1.running_mean' in sd
+        model = ArcFaultNetV2(
+            in_channels=4, spec_in_channels=1,
+            use_se=use_se, deep_classifier=deep_classifier
+        )
         model.load_state_dict(sd)
         model.to(device).eval()
         return model
