@@ -339,6 +339,7 @@ def run_leave_one_charge_out_cv(
     se_reduction: int = 8,
     use_amplitude: bool = False,
     deep_classifier: bool = False,
+    fusion_mode: str = 'gated',
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -395,6 +396,7 @@ def run_leave_one_charge_out_cv(
                       use_se=use_se, se_reduction=se_reduction,
                       use_amplitude=use_amplitude,
                       deep_classifier=deep_classifier,
+                      fusion_mode=fusion_mode,
                       fs=fs, n_fft=n_fft).to(device)
         n_params = sum(p.numel() for p in model.parameters())
 
@@ -488,6 +490,7 @@ def run_leave_one_charge_out_cv(
         'se_reduction':   se_reduction,
         'use_amplitude':  use_amplitude,
         'deep_classifier': deep_classifier,
+        'fusion_mode':    fusion_mode,
         'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
@@ -534,6 +537,7 @@ def run_single_training(
     se_reduction: int = 8,
     use_amplitude: bool = False,
     deep_classifier: bool = False,
+    fusion_mode: str = 'gated',
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -589,6 +593,7 @@ def run_single_training(
                       use_se=use_se, se_reduction=se_reduction,
                       use_amplitude=use_amplitude,
                       deep_classifier=deep_classifier,
+                      fusion_mode=fusion_mode,
                       fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
@@ -627,6 +632,7 @@ def run_single_training(
         'se_reduction':   se_reduction,
         'use_amplitude':  use_amplitude,
         'deep_classifier': deep_classifier,
+        'fusion_mode':    fusion_mode,
         'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
@@ -671,6 +677,7 @@ def run_kfold_cv(
     se_reduction: int = 8,
     use_amplitude: bool = False,
     deep_classifier: bool = False,
+    fusion_mode: str = 'gated',
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -733,6 +740,7 @@ def run_kfold_cv(
                           use_se=use_se, se_reduction=se_reduction,
                           use_amplitude=use_amplitude,
                           deep_classifier=deep_classifier,
+                          fusion_mode=fusion_mode,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -874,6 +882,7 @@ def run_groupkfold_cv(
     se_reduction: int = 8,
     use_amplitude: bool = False,
     deep_classifier: bool = False,
+    fusion_mode: str = 'gated',
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -1005,6 +1014,7 @@ def run_groupkfold_cv(
                           use_se=use_se, se_reduction=se_reduction,
                           use_amplitude=use_amplitude,
                           deep_classifier=deep_classifier,
+                          fusion_mode=fusion_mode,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -1177,6 +1187,10 @@ def main():
                         help='Add learnable amplitude to Gabor filters')
     parser.add_argument('--deep-clf', action='store_true',
                         help='Use deeper classifier head with BatchNorm')
+    parser.add_argument('--fusion-mode', type=str, default='gated',
+                        choices=['gated', 'cross_attention', 'concat'],
+                        help='V2 fusion: gated (cross-conditioned gating), '
+                             'cross_attention (true Q/K/V), concat (simple concat)')
 
     args = parser.parse_args()
 
@@ -1229,6 +1243,7 @@ def main():
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
+            fusion_mode=args.fusion_mode,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1253,6 +1268,7 @@ def main():
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
+            fusion_mode=args.fusion_mode,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1278,6 +1294,7 @@ def main():
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
+            fusion_mode=args.fusion_mode,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1301,6 +1318,7 @@ def main():
             se_reduction=args.se_reduction,
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
+            fusion_mode=args.fusion_mode,
             fs=fs,
             n_fft=args.n_fft
         )

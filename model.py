@@ -1102,6 +1102,152 @@ class RevisedCrossAttention(nn.Module):
         return self.fusion(torch.cat([f_t, f_s], dim=-1))     # (B, C)
 
 
+class SequentialCrossAttention(nn.Module):
+    """
+    True Q/K/V cross-attention operating on sequential features BEFORE GAP.
+
+    Unlike RevisedCrossAttention (which operates on GAP'd vectors), this module
+    receives full (B, C, T) feature maps from both branches and computes
+    position-to-position attention:
+
+      - Temporal branch queries attend to spectral branch keys/values
+      - Spectral branch queries attend to temporal branch keys/values
+      - Results are fused and GAP'd to produce (B, C)
+
+    This is the standard cross-attention formulation:
+      Q_t = W_q(F_temporal),  K_s = W_k(F_spectral),  V_s = W_v(F_spectral)
+      α = softmax(Q_t @ K_s^T / √d_k)
+      output_t = α @ V_s
+
+    Bidirectional: both branches attend to each other, then fused.
+    """
+
+    def __init__(self, channels: int = 128, d_k: int = 32, n_heads: int = 4):
+        super().__init__()
+        self.channels = channels
+        self.d_k = d_k
+        self.n_heads = n_heads
+        self.head_dim = d_k // n_heads
+        assert d_k % n_heads == 0, f"d_k ({d_k}) must be divisible by n_heads ({n_heads})"
+
+        # Temporal → attends to Spectral (Q from temporal, K/V from spectral)
+        self.q_temporal = nn.Conv1d(channels, d_k, 1)
+        self.k_spectral = nn.Conv1d(channels, d_k, 1)
+        self.v_spectral = nn.Conv1d(channels, channels, 1)
+
+        # Spectral → attends to Temporal (Q from spectral, K/V from temporal)
+        self.q_spectral = nn.Conv1d(channels, d_k, 1)
+        self.k_temporal = nn.Conv1d(channels, d_k, 1)
+        self.v_temporal = nn.Conv1d(channels, channels, 1)
+
+        self.scale = math.sqrt(self.head_dim)
+
+        # Layer norms for stable training
+        self.norm_t = nn.LayerNorm(channels)
+        self.norm_s = nn.LayerNorm(channels)
+
+        # Fusion: merge the two cross-attended streams
+        self.fusion = nn.Sequential(
+            nn.Linear(channels * 2, channels),
+            nn.GELU()
+        )
+
+    def _cross_attn(self, Q_proj, K_proj, V_proj, Q_input, K_input):
+        """
+        Compute multi-head cross-attention.
+
+        Args:
+            Q_proj, K_proj, V_proj: projection layers
+            Q_input: (B, C, T_q) - query source
+            K_input: (B, C, T_k) - key/value source
+
+        Returns:
+            output: (B, C, T_q) - attended features
+        """
+        B = Q_input.shape[0]
+        T_q = Q_input.shape[2]
+        T_k = K_input.shape[2]
+
+        Q = Q_proj(Q_input)   # (B, d_k, T_q)
+        K = K_proj(K_input)   # (B, d_k, T_k)
+        V = V_proj(K_input)   # (B, C, T_k)
+
+        # Reshape for multi-head: (B, n_heads, head_dim, T)
+        Q = Q.view(B, self.n_heads, self.head_dim, T_q)
+        K = K.view(B, self.n_heads, self.head_dim, T_k)
+
+        # Attention scores: (B, n_heads, T_q, T_k)
+        scores = torch.einsum('bndt,bndk->bntk', Q, K) / self.scale
+        attn = F.softmax(scores, dim=-1)  # normalize over key positions
+
+        # Reshape V for multi-head application
+        # V is (B, C, T_k), we need to split C into n_heads groups
+        C = V.shape[1]
+        head_c = C // self.n_heads
+        V_mh = V.view(B, self.n_heads, head_c, T_k)  # (B, n_heads, head_c, T_k)
+
+        # Apply attention: (B, n_heads, head_c, T_q)
+        out = torch.einsum('bntk,bnck->bnct', attn, V_mh)
+
+        # Merge heads back: (B, C, T_q)
+        out = out.reshape(B, C, T_q)
+
+        return out
+
+    def forward(self, f_temporal: torch.Tensor, f_spectral: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            f_temporal:  (B, C, T) - sequential features from temporal branch
+            f_spectral:  (B, C, T) - sequential features from spectral branch
+
+        Returns:
+            embedding: (B, C) - fused embedding (GAP applied internally)
+        """
+        # Bidirectional cross-attention
+        # Temporal queries attend to spectral keys/values
+        t_attended = self._cross_attn(
+            self.q_temporal, self.k_spectral, self.v_spectral,
+            f_temporal, f_spectral
+        )  # (B, C, T)
+
+        # Spectral queries attend to temporal keys/values
+        s_attended = self._cross_attn(
+            self.q_spectral, self.k_temporal, self.v_temporal,
+            f_spectral, f_temporal
+        )  # (B, C, T)
+
+        # Residual connection + LayerNorm
+        t_out = self.norm_t((f_temporal + t_attended).transpose(1, 2)).transpose(1, 2)  # (B, C, T)
+        s_out = self.norm_s((f_spectral + s_attended).transpose(1, 2)).transpose(1, 2)  # (B, C, T)
+
+        # GAP over time dimension
+        t_emb = t_out.mean(dim=-1)   # (B, C)
+        s_emb = s_out.mean(dim=-1)   # (B, C)
+
+        # Fuse
+        return self.fusion(torch.cat([t_emb, s_emb], dim=-1))  # (B, C)
+
+
+class SimpleConcatFusion(nn.Module):
+    """
+    Ablation baseline: simple concatenation + linear projection.
+
+    No attention, no gating — just concat the GAP'd branch vectors and
+    project to the embedding dimension. The simplest possible fusion.
+    """
+
+    def __init__(self, channels: int = 128):
+        super().__init__()
+        self.fusion = nn.Sequential(
+            nn.Linear(channels * 2, channels),
+            nn.GELU()
+        )
+
+    def forward(self, f_temporal: torch.Tensor, f_spectral: torch.Tensor) -> torch.Tensor:
+        # f_temporal, f_spectral: (B, C)
+        return self.fusion(torch.cat([f_temporal, f_spectral], dim=-1))  # (B, C)
+
+
 class ArcFaultNetV2(nn.Module):
     """
     Arc-FaultNet V2 (single-cycle adaptation).
@@ -1125,10 +1271,12 @@ class ArcFaultNetV2(nn.Module):
         dropout: float = 0.3,
         use_se: bool = False,
         se_reduction: int = 8,
-        deep_classifier: bool = False
+        deep_classifier: bool = False,
+        fusion_mode: str = 'gated'
     ):
         super().__init__()
         C = hidden_dims[-1]
+        self.fusion_mode = fusion_mode
 
         self.temporal = TemporalBranchV2(
             in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim,
@@ -1139,7 +1287,14 @@ class ArcFaultNetV2(nn.Module):
             output_dim=output_dim, freq_groups=freq_groups,
             use_se=use_se, se_reduction=se_reduction
         )
-        self.cross_attn = RevisedCrossAttention(channels=C)
+
+        # Fusion mechanism selection
+        if fusion_mode == 'cross_attention':
+            self.cross_attn = SequentialCrossAttention(channels=C)
+        elif fusion_mode == 'concat':
+            self.cross_attn = SimpleConcatFusion(channels=C)
+        else:  # 'gated' (default, backward-compatible)
+            self.cross_attn = RevisedCrossAttention(channels=C)
 
         # Classifier head — deep variant adds BN + heavier dropout for stability
         if deep_classifier:
@@ -1163,9 +1318,16 @@ class ArcFaultNetV2(nn.Module):
 
     def extract_embedding(self, x_1d: torch.Tensor, x_2d: torch.Tensor) -> torch.Tensor:
         """Return the fused 128-d embedding (input to Stage 5)."""
-        f_t = self.temporal(x_1d).mean(dim=-1)     # (B, C)  GAP over time
-        f_s = self.spectral(x_2d).mean(dim=-1)     # (B, C)  GAP over time
-        return self.cross_attn(f_t, f_s)           # (B, C)
+        if self.fusion_mode == 'cross_attention':
+            # SequentialCrossAttention operates on (B, C, T) and does GAP internally
+            f_t_seq = self.temporal(x_1d)    # (B, C, T)
+            f_s_seq = self.spectral(x_2d)    # (B, C, T)
+            return self.cross_attn(f_t_seq, f_s_seq)   # (B, C)
+        else:
+            # Gated and Concat operate on GAP'd (B, C) vectors
+            f_t = self.temporal(x_1d).mean(dim=-1)     # (B, C)
+            f_s = self.spectral(x_2d).mean(dim=-1)     # (B, C)
+            return self.cross_attn(f_t, f_s)           # (B, C)
 
     def forward(
         self,
@@ -1492,7 +1654,8 @@ def get_model(
     use_amplitude: bool = False,
     deep_classifier: bool = False,
     fs: float = 1_000_000,
-    n_fft: int = 512
+    n_fft: int = 512,
+    **kwargs
 ) -> nn.Module:
     """
     Factory function to get model by name.
@@ -1550,7 +1713,8 @@ def get_model(
         'arcfaultnet_v2': lambda: ArcFaultNetV2(
             in_channels=4, spec_in_channels=1,
             use_se=use_se, se_reduction=se_reduction,
-            deep_classifier=deep_classifier
+            deep_classifier=deep_classifier,
+            fusion_mode=kwargs.get('fusion_mode', 'gated')
         ),
         # ── V2 ablation variants ──
         'v2_no_attention':   lambda: ArcFaultNetV2_NoAttention(in_channels=4, spec_in_channels=1),
@@ -1596,9 +1760,18 @@ def build_model_from_checkpoint(ckpt_path, device='cpu', fs: float = 1_000_000, 
         print("  Detected: ArcFaultNetV2 architecture")
         use_se = 'temporal.features.3.fc.0.weight' in sd
         deep_classifier = 'classifier.4.weight' in sd or 'classifier.1.running_mean' in sd
+        # Auto-detect fusion_mode from state_dict keys
+        if 'cross_attn.q_temporal.weight' in sd:
+            fusion_mode = 'cross_attention'
+        elif 'cross_attn.cam_temporal.0.weight' in sd:
+            fusion_mode = 'gated'
+        else:
+            fusion_mode = 'concat'
+        print(f"  fusion_mode={fusion_mode}, use_se={use_se}, deep_classifier={deep_classifier}")
         model = ArcFaultNetV2(
             in_channels=4, spec_in_channels=1,
-            use_se=use_se, deep_classifier=deep_classifier
+            use_se=use_se, deep_classifier=deep_classifier,
+            fusion_mode=fusion_mode
         )
         model.load_state_dict(sd)
         model.to(device).eval()

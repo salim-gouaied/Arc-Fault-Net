@@ -36,18 +36,32 @@ from model import get_model
 # ═══════════════════════════════════════════════════════
 
 VARIANTS = [
-    {'name': 'arcfaultnet_v2',    'label': 'Full V2',
-     'desc': 'Temporal + Spectral + CrossAttention (reference)', 'color': '#2ecc71'},
+    {'name': 'arcfaultnet_v2',    'label': 'Full V2 (Gated)',
+     'desc': 'Temporal + Spectral + Cross-Conditioned Gating (reference)',
+     'color': '#2ecc71', 'fusion_mode': 'gated'},
+    {'name': 'arcfaultnet_v2',    'label': 'Full V2 (Cross-Attn)',
+     'desc': 'Temporal + Spectral + True Q/K/V Cross-Attention',
+     'color': '#1abc9c', 'fusion_mode': 'cross_attention',
+     'result_key': 'v2_cross_attention'},
+    {'name': 'arcfaultnet_v2',    'label': 'Full V2 (Concat)',
+     'desc': 'Temporal + Spectral + Simple Concatenation',
+     'color': '#f39c12', 'fusion_mode': 'concat',
+     'result_key': 'v2_concat'},
     {'name': 'v2_no_attention',   'label': 'Sans Attention',
-     'desc': 'Dual-branch, concat simple sans attention',        'color': '#3498db'},
+     'desc': 'Dual-branch, concat simple sans attention',
+     'color': '#3498db', 'fusion_mode': 'gated'},
     {'name': 'v2_no_chan_gate',   'label': 'Sans Channel Gate',
-     'desc': 'Dual-branch, MLP fusion sans gating sigmoid',      'color': '#9b59b6'},
+     'desc': 'Dual-branch, MLP fusion sans gating sigmoid',
+     'color': '#9b59b6', 'fusion_mode': 'gated'},
     {'name': 'v2_temporal_only',  'label': 'Temporel seul',
-     'desc': 'Branche temporelle uniquement (pas de STFT)',       'color': '#e67e22'},
+     'desc': 'Branche temporelle uniquement (pas de STFT)',
+     'color': '#e67e22', 'fusion_mode': 'gated'},
     {'name': 'v2_spectral_only',  'label': 'Spectral seul',
-     'desc': 'Branche spectrale uniquement (pas de Conv1d)',      'color': '#e74c3c'},
+     'desc': 'Branche spectrale uniquement (pas de Conv1d)',
+     'color': '#e74c3c', 'fusion_mode': 'gated'},
     {'name': 'v2_baseline_cnn',   'label': 'CNN Classique',
-     'desc': 'CNN simple sans dual-branch ni attention',          'color': '#95a5a6'},
+     'desc': 'CNN simple sans dual-branch ni attention',
+     'color': '#95a5a6', 'fusion_mode': 'gated'},
 ]
 
 # ═══════════════════════════════════════════════════════
@@ -122,7 +136,7 @@ def evaluate(model, loader, criterion, device):
 
 def train_variant(name, dataset, train_idx, val_idx, test_idx, device,
                   epochs=200, lr=3e-4, wd=5e-4, bs=64, patience=15,
-                  grad_clip=0.5, num_workers=4):
+                  grad_clip=0.5, num_workers=4, fusion_mode='gated'):
     """Train a single variant and return test metrics + model."""
     train_loader = DataLoader(Subset(dataset, train_idx), batch_size=bs,
                               shuffle=True, num_workers=num_workers,
@@ -132,7 +146,7 @@ def train_variant(name, dataset, train_idx, val_idx, test_idx, device,
     test_loader  = DataLoader(Subset(dataset, test_idx),  batch_size=bs,
                               shuffle=False, num_workers=num_workers, pin_memory=True)
 
-    model = get_model(name).to(device)
+    model = get_model(name, fusion_mode=fusion_mode).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
@@ -168,6 +182,7 @@ def train_variant(name, dataset, train_idx, val_idx, test_idx, device,
 # ═══════════════════════════════════════════════════════
 
 def plot_confusion_matrix(labels, probs, variant, out_dir):
+    result_key = variant.get('result_key', variant['name'])
     preds = (probs >= 0.5).astype(int)
     cm = confusion_matrix(labels, preds)
     fig, ax = plt.subplots(figsize=(4.5, 4))
@@ -183,7 +198,7 @@ def plot_confusion_matrix(labels, probs, variant, out_dir):
             ax.text(j, i, str(cm[i,j]), ha='center', va='center',
                     color='white' if cm[i,j] > thresh else 'black', fontsize=14)
     plt.tight_layout()
-    fig.savefig(out_dir / f"cm_{variant['name']}.png", dpi=150)
+    fig.savefig(out_dir / f"cm_{result_key}.png", dpi=150)
     plt.close(fig)
 
 def plot_roc_curve(labels, probs, variant, out_dir):
@@ -196,7 +211,7 @@ def plot_roc_curve(labels, probs, variant, out_dir):
     ax.set_title(f"Courbe ROC — {variant['label']}", fontsize=11)
     ax.legend(loc='lower right'); ax.grid(alpha=0.3)
     plt.tight_layout()
-    fig.savefig(out_dir / f"roc_{variant['name']}.png", dpi=150)
+    fig.savefig(out_dir / f"roc_{variant.get('result_key', variant['name'])}.png", dpi=150)
     plt.close(fig)
     return roc_auc
 
@@ -204,7 +219,10 @@ def plot_all_roc_overlay(all_results, out_dir):
     """Overlay all ROC curves on one figure."""
     fig, ax = plt.subplots(figsize=(7, 6))
     for v in VARIANTS:
-        r = all_results[v['name']]
+        rk = v.get('result_key', v['name'])
+        if rk not in all_results:
+            continue
+        r = all_results[rk]
         fpr, tpr, _ = roc_curve(r['labels'], r['probs'])
         a = auc(fpr, tpr)
         ax.plot(fpr, tpr, lw=2, color=v['color'], label=f"{v['label']} (AUC={a:.3f})")
@@ -219,10 +237,10 @@ def plot_all_roc_overlay(all_results, out_dir):
 
 def plot_comparison_bars(all_results, out_dir):
     """Grouped bar chart: Accuracy + F1 for all variants."""
-    names  = [v['label'] for v in VARIANTS]
-    accs   = [all_results[v['name']]['accuracy'] * 100 for v in VARIANTS]
-    f1s    = [all_results[v['name']]['f1'] * 100 for v in VARIANTS]
-    colors = [v['color'] for v in VARIANTS]
+    names  = [v['label'] for v in VARIANTS if v.get('result_key', v['name']) in all_results]
+    accs   = [all_results[v.get('result_key', v['name'])]['accuracy'] * 100 for v in VARIANTS if v.get('result_key', v['name']) in all_results]
+    f1s    = [all_results[v.get('result_key', v['name'])]['f1'] * 100 for v in VARIANTS if v.get('result_key', v['name']) in all_results]
+    colors = [v['color'] for v in VARIANTS if v.get('result_key', v['name']) in all_results]
 
     x = np.arange(len(names))
     w = 0.35
@@ -262,7 +280,10 @@ def plot_radar(all_results, out_dir):
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
     for v in VARIANTS:
-        r = all_results[v['name']]
+        rk = v.get('result_key', v['name'])
+        if rk not in all_results:
+            continue
+        r = all_results[rk]
         vals = [r[m] for m in metrics]
         vals += vals[:1]
         ax.plot(angles, vals, 'o-', linewidth=2, color=v['color'], label=v['label'])
@@ -281,7 +302,11 @@ def plot_contributions(all_results, out_dir):
     """Horizontal bar chart showing the Δ each component contributes."""
     ref_acc = all_results['arcfaultnet_v2']['accuracy']
     contributions = [
-        ('Cross-Attention\n(vs concat simple)',
+        ('Cross-Attention Q/K/V\n(vs gated)',
+         all_results.get('v2_cross_attention', {}).get('accuracy', ref_acc) - ref_acc),
+        ('Gated Fusion\n(vs concat simple)',
+         ref_acc - all_results.get('v2_concat', {}).get('accuracy', ref_acc)),
+        ('Any Fusion\n(vs no attention)',
          ref_acc - all_results['v2_no_attention']['accuracy']),
         ('Channel Gating\n(vs MLP fusion)',
          ref_acc - all_results['v2_no_chan_gate']['accuracy']),
@@ -318,7 +343,10 @@ def plot_params_vs_accuracy(all_results, out_dir):
     """Scatter: param count vs accuracy for each variant."""
     fig, ax = plt.subplots(figsize=(8, 5))
     for v in VARIANTS:
-        r = all_results[v['name']]
+        rk = v.get('result_key', v['name'])
+        if rk not in all_results:
+            continue
+        r = all_results[rk]
         ax.scatter(r['n_params'] / 1000, r['accuracy'] * 100,
                    s=150, color=v['color'], edgecolors='black', linewidth=0.8, zorder=5)
         ax.annotate(v['label'], (r['n_params']/1000, r['accuracy']*100),
@@ -337,19 +365,22 @@ def plot_params_vs_accuracy(all_results, out_dir):
 
 def print_summary(all_results):
     ref = all_results['arcfaultnet_v2']['accuracy']
-    print(f"\n{'='*80}")
+    print(f"\n{'='*90}")
     print(f"  RÉSULTATS DE L'ÉTUDE D'ABLATION — ARC-FAULTNET V2")
-    print(f"{'='*80}")
-    print(f"\n  {'Variante':<22} {'Acc':>8} {'F1':>8} {'Prec':>8} {'Rec':>8} {'Spec':>8} {'Params':>10} {'Δ Acc':>8}")
-    print(f"  {'─'*76}")
+    print(f"{'='*90}")
+    print(f"\n  {'Variante':<26} {'Acc':>8} {'F1':>8} {'Prec':>8} {'Rec':>8} {'Spec':>8} {'Params':>10} {'Δ Acc':>8}")
+    print(f"  {'─'*86}")
     for v in VARIANTS:
-        r = all_results[v['name']]
+        rk = v.get('result_key', v['name'])
+        if rk not in all_results:
+            continue
+        r = all_results[rk]
         delta = (r['accuracy'] - ref) * 100
-        tag = '(ref)' if v['name'] == 'arcfaultnet_v2' else f'{delta:+.2f}%'
-        print(f"  {v['label']:<22} {100*r['accuracy']:>7.2f}% {100*r['f1']:>7.2f}% "
+        tag = '(ref)' if rk == 'arcfaultnet_v2' else f'{delta:+.2f}%'
+        print(f"  {v['label']:<26} {100*r['accuracy']:>7.2f}% {100*r['f1']:>7.2f}% "
               f"{100*r['precision']:>7.2f}% {100*r['recall']:>7.2f}% "
               f"{100*r['specificity']:>7.2f}% {r['n_params']:>10,} {tag:>8}")
-    print(f"  {'─'*76}\n")
+    print(f"  {'─'*86}\n")
 
 # ═══════════════════════════════════════════════════════
 #  MAIN
@@ -407,15 +438,18 @@ def main():
     # ── Filter variants if requested ──
     variants_to_run = VARIANTS
     if args.variants:
-        variants_to_run = [v for v in VARIANTS if v['name'] in args.variants]
+        variants_to_run = [v for v in VARIANTS
+                           if v.get('result_key', v['name']) in args.variants
+                           or v['name'] in args.variants]
 
     # ── Train all variants ──
     all_results = {}
     t0 = time.time()
 
     for v in variants_to_run:
+        result_key = v.get('result_key', v['name'])
         print(f"\n{'─'*60}")
-        print(f"  Variante: {v['label']}  ({v['name']})")
+        print(f"  Variante: {v['label']}  ({result_key})")
         print(f"  {v['desc']}")
         print(f"{'─'*60}")
 
@@ -428,9 +462,10 @@ def main():
             wd=args.weight_decay, bs=args.batch_size,
             patience=args.patience, grad_clip=args.gradient_clip,
             num_workers=args.num_workers,
+            fusion_mode=v.get('fusion_mode', 'gated'),
         )
 
-        all_results[v['name']] = metrics
+        all_results[result_key] = metrics
         print(f"  → Acc={100*metrics['accuracy']:.2f}%  F1={100*metrics['f1']:.2f}%  "
               f"Prec={100*metrics['precision']:.2f}%  Rec={100*metrics['recall']:.2f}%  "
               f"Params={metrics['n_params']:,}")
@@ -441,19 +476,24 @@ def main():
 
     duration = time.time() - t0
 
-    # ── Summary ──
-    if len(all_results) == len(VARIANTS):
+    save_data = {}
+    for k, v in all_results.items():
+        save_data[k] = {kk: vv for kk, vv in v.items() if kk not in ('probs', 'labels')}
+
+    # Check if all expected variants ran for full summary plots
+    expected_keys = {v.get('result_key', v['name']) for v in VARIANTS}
+    if expected_keys.issubset(all_results.keys()):
         print_summary(all_results)
         plot_all_roc_overlay(all_results, out_dir)
         plot_comparison_bars(all_results, out_dir)
         plot_radar(all_results, out_dir)
         plot_contributions(all_results, out_dir)
         plot_params_vs_accuracy(all_results, out_dir)
+    elif len(all_results) >= 2:
+        # Partial run: still print what we have
+        print_summary(all_results)
+        plot_comparison_bars(all_results, out_dir)
 
-    # ── Save JSON ──
-    save_data = {}
-    for k, v in all_results.items():
-        save_data[k] = {kk: vv for kk, vv in v.items() if kk not in ('probs', 'labels')}
     summary = {
         'timestamp': timestamp, 'seed': args.seed,
         'split': {'train': len(train_idx), 'val': len(val_idx), 'test': len(test_idx)},
