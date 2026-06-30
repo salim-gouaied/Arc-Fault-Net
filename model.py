@@ -969,14 +969,15 @@ class SpectralBranchV2(nn.Module):
         output_dim: int = 64,
         freq_groups: int = 4,
         use_se: bool = False,
-        se_reduction: int = 8
+        se_reduction: int = 8,
+        use_freq_gate: bool = True
     ):
         super().__init__()
         self.output_dim = output_dim
         self.freq_groups = freq_groups
 
         c0, c1, c2 = hidden_dims
-        self.freq_gate = FrequencyGate(in_channels)
+        self.freq_gate = FrequencyGate(in_channels) if use_freq_gate else None
 
         # Build blocks with optional SE attention after each conv
         block1_layers = [
@@ -1017,7 +1018,8 @@ class SpectralBranchV2(nn.Module):
         Returns:
             (B, 128, D)
         """
-        x = self.freq_gate(x)
+        if self.freq_gate is not None:
+            x = self.freq_gate(x)
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)              # (B, C, f', t')
@@ -1272,7 +1274,8 @@ class ArcFaultNetV2(nn.Module):
         use_se: bool = False,
         se_reduction: int = 8,
         deep_classifier: bool = False,
-        fusion_mode: str = 'gated'
+        fusion_mode: str = 'gated',
+        use_freq_gate: bool = True
     ):
         super().__init__()
         C = hidden_dims[-1]
@@ -1285,7 +1288,8 @@ class ArcFaultNetV2(nn.Module):
         self.spectral = SpectralBranchV2(
             in_channels=spec_in_channels, hidden_dims=hidden_dims,
             output_dim=output_dim, freq_groups=freq_groups,
-            use_se=use_se, se_reduction=se_reduction
+            use_se=use_se, se_reduction=se_reduction,
+            use_freq_gate=use_freq_gate
         )
 
         # Fusion mechanism selection
@@ -1525,19 +1529,36 @@ class ArcFaultNetV2_TemporalOnly(nn.Module):
         hidden_dims: Tuple[int, int, int] = (32, 64, 128),
         output_dim: int = 64,
         classifier_hidden: int = 64,
-        dropout: float = 0.3
+        dropout: float = 0.3,
+        use_se: bool = False,
+        se_reduction: int = 8,
+        deep_classifier: bool = False
     ):
         super().__init__()
         C = hidden_dims[-1]
 
         self.temporal = TemporalBranchV2(
-            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim
+            in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim,
+            use_se=use_se, se_reduction=se_reduction
         )
-        self.classifier = nn.Sequential(
-            nn.Linear(C, classifier_hidden), nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(classifier_hidden, 1)
-        )
+        if deep_classifier:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden),
+                nn.BatchNorm1d(classifier_hidden),
+                nn.GELU(),
+                nn.Dropout(0.5),
+                nn.Linear(classifier_hidden, classifier_hidden // 2),
+                nn.BatchNorm1d(classifier_hidden // 2),
+                nn.GELU(),
+                nn.Dropout(0.3),
+                nn.Linear(classifier_hidden // 2, 1)
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden), nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(classifier_hidden, 1)
+            )
 
     def forward(self, x_1d: torch.Tensor, x_2d: torch.Tensor = None,
                 return_embedding: bool = False) -> torch.Tensor:
@@ -1565,20 +1586,39 @@ class ArcFaultNetV2_SpectralOnly(nn.Module):
         output_dim: int = 64,
         freq_groups: int = 4,
         classifier_hidden: int = 64,
-        dropout: float = 0.3
+        dropout: float = 0.3,
+        use_se: bool = False,
+        se_reduction: int = 8,
+        deep_classifier: bool = False,
+        use_freq_gate: bool = True
     ):
         super().__init__()
         C = hidden_dims[-1]
 
         self.spectral = SpectralBranchV2(
             in_channels=spec_in_channels, hidden_dims=hidden_dims,
-            output_dim=output_dim, freq_groups=freq_groups
+            output_dim=output_dim, freq_groups=freq_groups,
+            use_se=use_se, se_reduction=se_reduction,
+            use_freq_gate=use_freq_gate
         )
-        self.classifier = nn.Sequential(
-            nn.Linear(C, classifier_hidden), nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(classifier_hidden, 1)
-        )
+        if deep_classifier:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden),
+                nn.BatchNorm1d(classifier_hidden),
+                nn.GELU(),
+                nn.Dropout(0.5),
+                nn.Linear(classifier_hidden, classifier_hidden // 2),
+                nn.BatchNorm1d(classifier_hidden // 2),
+                nn.GELU(),
+                nn.Dropout(0.3),
+                nn.Linear(classifier_hidden // 2, 1)
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Linear(C, classifier_hidden), nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(classifier_hidden, 1)
+            )
 
     def forward(self, x_1d: torch.Tensor = None, x_2d: torch.Tensor = None,
                 return_embedding: bool = False) -> torch.Tensor:
