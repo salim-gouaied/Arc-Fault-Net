@@ -64,7 +64,12 @@ def main():
     print(f"\nSplit: train={len(train_idx)} val={len(val_idx)} test={len(test_idx)}")
 
     all_results = {}
-    
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_dir = Path('/home/manip/pfe_salim_gouaied/Arc-Fault-Net/ablation_results') / f'compare_attention_{timestamp}'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\nOutputs will be saved to: {out_dir}")
+
     for v in VARIANTS:
         print(f"\n{'─'*60}")
         print(f"  Training: {v['label']}")
@@ -78,9 +83,10 @@ def main():
             variant=v, dataset=dataset,
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx,
             device=device, epochs=200, lr=3e-4, wd=5e-4, bs=64,
-            patience=15, grad_clip=0.5, num_workers=4
+            patience=15, grad_clip=0.5, num_workers=4,
+            output_dir=out_dir / v['key'],   # ← saves best_model.pt + metrics.json
         )
-        
+
         all_results[v['key']] = metrics
         print(f"  → Acc={100*metrics['accuracy']:.2f}%  F1={100*metrics['f1']:.2f}%  Params={metrics['n_params']:,}")
 
@@ -98,6 +104,13 @@ def main():
         n_val = new[m] * 100
         delta = n_val - o_val
         print(f"  {m.capitalize():<15} | {o_val:>14.2f}% | {n_val:>14.2f}% | {delta:>9.2f}%")
+    print("-" * 70)
+    
+    # Also print parameters
+    o_params = old['n_params']
+    n_params = new['n_params']
+    delta_params = n_params - o_params
+    print(f"  {'Parameters':<15} | {o_params:>14,} | {n_params:>14,} | {delta_params:>+10,}")
     print("-" * 70)
 
 if __name__ == '__main__':

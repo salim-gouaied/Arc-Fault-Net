@@ -203,7 +203,15 @@ def evaluate(model, loader, criterion, device, variant):
 
 def train_variant(variant, dataset, train_idx, val_idx, test_idx, device,
                   epochs=200, lr=3e-4, wd=5e-4, bs=64, patience=15,
-                  grad_clip=0.5, num_workers=4):
+                  grad_clip=0.5, num_workers=4, output_dir=None):
+    """
+    Train one model variant and return (model, metrics).
+
+    Args:
+        output_dir: Optional Path. If provided, saves:
+                    - best_model.pt  (best checkpoint by val F1)
+                    - metrics.json   (test metrics + config)
+    """
     train_loader = DataLoader(Subset(dataset, train_idx), batch_size=bs,
                               shuffle=True, num_workers=num_workers,
                               pin_memory=True, drop_last=True)
@@ -240,6 +248,20 @@ def train_variant(variant, dataset, train_idx, val_idx, test_idx, device,
     test_m = evaluate(model, test_loader, criterion, device, variant)
     test_m['n_params'] = n_params
     test_m['best_epoch'] = best_epoch
+
+    # ── Persist checkpoint + metrics if output_dir is given ──
+    if output_dir is not None:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), out / 'best_model.pt')
+        save_m = {k: v for k, v in test_m.items() if k not in ('probs', 'labels')}
+        save_m.update({'key': variant['key'], 'label': variant['label'],
+                       'desc': variant['desc'], 'best_epoch': best_epoch})
+        with open(out / 'metrics.json', 'w') as f:
+            import json as _json
+            _json.dump(save_m, f, indent=2)
+        print(f"    Saved: {out / 'best_model.pt'}")
+
     return model, test_m
 
 # ═══════════════════════════════════════════════════════
@@ -434,6 +456,7 @@ def main():
 
         set_seed(args.seed)
 
+        variant_dir = out_dir / v['key']
         model, metrics = train_variant(
             variant=v, dataset=dataset,
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx,
@@ -441,6 +464,7 @@ def main():
             wd=args.weight_decay, bs=args.batch_size,
             patience=args.patience, grad_clip=args.gradient_clip,
             num_workers=args.num_workers,
+            output_dir=variant_dir,
         )
 
         all_results[v['key']] = metrics
