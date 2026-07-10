@@ -73,9 +73,16 @@ def train_one_epoch(
     device: torch.device,
     epoch: int,
     gradient_clip: float = 0.5,
-    label_smoothing: float = 0.05
+    label_smoothing: float = 0.05,
+    channel_dropout: float = 0.0
 ) -> Dict[str, float]:
-    """Train for one epoch with label smoothing."""
+    """Train for one epoch with label smoothing and optional channel dropout.
+
+    Args:
+        channel_dropout: Probability of dropping each temporal channel independently.
+                         E.g. 0.3 means each of the 4 channels has a 30% chance of
+                         being zeroed out per batch. Set to 0.0 to disable.
+    """
     model.train()
     # Enable augmentation on the underlying dataset
     if hasattr(loader.dataset, 'dataset'):
@@ -90,6 +97,16 @@ def train_one_epoch(
         x_1d   = x_1d.to(device)
         x_2d   = x_2d.to(device)
         labels = labels.to(device)
+
+        # ── Channel dropout: zero out random temporal channels ──
+        if channel_dropout > 0.0 and x_1d.shape[1] > 1:
+            n_ch = x_1d.shape[1]
+            # Each channel dropped independently with prob=channel_dropout
+            # But always keep at least 1 channel alive
+            mask = (torch.rand(n_ch, device=device) >= channel_dropout).float()
+            if mask.sum() == 0:  # ensure at least 1 survives
+                mask[random.randint(0, n_ch - 1)] = 1.0
+            x_1d = x_1d * mask.view(1, n_ch, 1)
 
         # Binary label smoothing: 0 -> 0.05, 1 -> 0.95
         smoothed_labels = labels * (1.0 - 2 * label_smoothing) + label_smoothing
@@ -214,7 +231,8 @@ def train_model(
     pos_weight: Optional[torch.Tensor] = None,
     checkpoint_dir: Optional[Path] = None,
     writer: Optional[SummaryWriter] = None,
-    fold_name: str = ""
+    fold_name: str = "",
+    channel_dropout: float = 0.0
 ) -> Tuple[nn.Module, Dict]:
     """
     Train model with early stopping on val_f1.
@@ -246,7 +264,8 @@ def train_model(
 
     for epoch in range(1, epochs + 1):
         train_metrics = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch, gradient_clip
+            model, train_loader, criterion, optimizer, device, epoch, gradient_clip,
+            channel_dropout=channel_dropout
         )
         val_metrics = evaluate(
             model, val_loader, criterion, device, "Val", threshold
@@ -539,7 +558,8 @@ def run_single_training(
     deep_classifier: bool = False,
     fusion_mode: str = 'gated',
     fs: float = 1_000_000,
-    n_fft: int = 512
+    n_fft: int = 512,
+    channel_dropout: float = 0.0
 ) -> Dict:
     """
     Single training run with random train/val/test split.
@@ -604,7 +624,7 @@ def run_single_training(
         patience=patience, gradient_clip=gradient_clip,
         threshold=threshold, pos_weight=pw,
         checkpoint_dir=run_dir, writer=writer,
-        fold_name="single"
+        fold_name="single", channel_dropout=channel_dropout
     )
 
     criterion    = nn.BCEWithLogitsLoss()
@@ -1191,6 +1211,10 @@ def main():
                         choices=['gated', 'cross_attention', 'concat'],
                         help='V2 fusion: gated (cross-conditioned gating), '
                              'cross_attention (true Q/K/V), concat (simple concat)')
+    parser.add_argument('--channel-dropout', type=float, default=0.0,
+                        help='Per-channel dropout probability for temporal branch (0.0=off, '
+                             '0.3=each ch has 30%% chance of being zeroed per batch). '
+                             'Forces model to learn from all channels.')
 
     args = parser.parse_args()
 
@@ -1320,7 +1344,8 @@ def main():
             deep_classifier=args.deep_clf,
             fusion_mode=args.fusion_mode,
             fs=fs,
-            n_fft=args.n_fft
+            n_fft=args.n_fft,
+            channel_dropout=args.channel_dropout
         )
 
 
