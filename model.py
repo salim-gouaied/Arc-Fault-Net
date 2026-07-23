@@ -1029,6 +1029,51 @@ class SpectralBranchV2(nn.Module):
         return self.proj(x)            # (B, C, D)
 
 
+class DescriptorChannelAttention(nn.Module):
+    """
+    Channel attention for the temporal branch — distinct from Squeeze-and-Excitation.
+
+    Rationale (arc physics + generalization).
+    The temporal branch is fed physically-derived channels
+    ``[I_norm, |ΔI|, TKEO, RMS_slide]``. The arc-discriminative content lives in the
+    transient, load-*independent* descriptors — the re-ignition discontinuities in
+    ``|ΔI|`` and ``TKEO`` — which appear as short, sparse PEAKS in time. A pure
+    average-pooling squeeze (as used by :class:`SEBlock`) dilutes those peaks over the
+    whole cycle and can miss them. This module therefore squeezes each channel with
+    BOTH average- and max-pooling and combines the two through a shared bottleneck MLP,
+    so a channel that is quiet on average but spikes sharply (the arc signature) can
+    still be amplified.
+
+    Because the input is already per-cycle normalized, the recalibration is computed
+    from the *shape* of the channels rather than their absolute amplitude; the learned
+    weighting therefore transfers across loads — it emphasizes the descriptors carrying
+    the arc signature regardless of the connected appliance and suppresses channels
+    dominated by load-specific low-frequency content. This is the mechanism by which
+    channel attention is intended to contribute to cross-load generalization and
+    false-positive reduction, complementing the sequential cross-attention that fuses
+    the temporal and spectral branches.
+
+    Works on both the raw descriptor channels ``(B, C_in, M)`` at the branch input and
+    the deeper feature maps ``(B, C, T)`` after each convolution block.
+    """
+
+    def __init__(self, channels: int, reduction: int = 8):
+        super().__init__()
+        hidden = max(channels // reduction, 4)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, channels),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, C, T)
+        avg = x.mean(dim=-1)                              # (B, C) — sustained energy
+        mx = x.amax(dim=-1)                               # (B, C) — transient peaks
+        w = torch.sigmoid(self.mlp(avg) + self.mlp(mx))   # (B, C) — channel gates
+        return x * w.unsqueeze(-1)
+
+
 class TemporalBranchV2(nn.Module):
     """
     Temporal branch for the 4 derived channels (Sub-Branch B style).
@@ -1036,8 +1081,14 @@ class TemporalBranchV2(nn.Module):
     Plain Conv1d (NO Gabor) with GELU — the filters learn arc-specific delta
     shapes directly from data without imposing a frequency-oscillation prior.
 
-    Optional SE blocks add channel-wise attention after each conv layer,
-    helping the network focus on the most informative derived channels.
+    Channel attention (:class:`DescriptorChannelAttention`, ON by default) is applied
+    first to the raw derived channels — acting as a learned, per-sample descriptor
+    selector that emphasizes the load-invariant arc descriptors — and again after each
+    convolution block to recalibrate the learned feature channels. It is the temporal
+    branch's channel-attention mechanism and is independent of the optional SE blocks.
+
+    Optional SE blocks (``use_se``) add an extra average-pooled channel recalibration
+    after each conv layer.
     """
 
     def __init__(
@@ -1047,12 +1098,19 @@ class TemporalBranchV2(nn.Module):
         kernel_sizes: Tuple[int, int, int] = (16, 8, 4),
         output_dim: int = 64,
         use_se: bool = False,
-        se_reduction: int = 8
+        se_reduction: int = 8,
+        use_channel_attn: bool = True,
+        ca_reduction: int = 8
     ):
         super().__init__()
         self.output_dim = output_dim
+        self.use_channel_attn = use_channel_attn
         dims = [in_channels] + list(hidden_dims)
         layers = []
+        # Input-level descriptor attention: learned per-sample weighting of the raw
+        # [I_norm, |ΔI|, TKEO, RMS_slide] channels (interpretable descriptor selector).
+        if use_channel_attn:
+            layers.append(DescriptorChannelAttention(in_channels, reduction=ca_reduction))
         for i in range(3):
             layers += [
                 nn.Conv1d(dims[i], dims[i + 1],
@@ -1063,6 +1121,9 @@ class TemporalBranchV2(nn.Module):
             ]
             if use_se:
                 layers.append(SEBlock(dims[i + 1], reduction=se_reduction))
+            # Feature-level channel attention after each block (peak-aware, always on).
+            if use_channel_attn:
+                layers.append(DescriptorChannelAttention(dims[i + 1], reduction=ca_reduction))
             if i < 2:
                 layers.append(nn.MaxPool1d(4))
         self.features = nn.Sequential(*layers)
@@ -1275,7 +1336,9 @@ class ArcFaultNetV2(nn.Module):
         se_reduction: int = 8,
         deep_classifier: bool = False,
         fusion_mode: str = 'gated',
-        use_freq_gate: bool = True
+        use_freq_gate: bool = True,
+        use_channel_attn: bool = True,
+        ca_reduction: int = 8
     ):
         super().__init__()
         C = hidden_dims[-1]
@@ -1283,7 +1346,8 @@ class ArcFaultNetV2(nn.Module):
 
         self.temporal = TemporalBranchV2(
             in_channels=in_channels, hidden_dims=hidden_dims, output_dim=output_dim,
-            use_se=use_se, se_reduction=se_reduction
+            use_se=use_se, se_reduction=se_reduction,
+            use_channel_attn=use_channel_attn, ca_reduction=ca_reduction
         )
         self.spectral = SpectralBranchV2(
             in_channels=spec_in_channels, hidden_dims=hidden_dims,
@@ -1754,7 +1818,8 @@ def get_model(
             in_channels=4, spec_in_channels=1,
             use_se=use_se, se_reduction=se_reduction,
             deep_classifier=deep_classifier,
-            fusion_mode=kwargs.get('fusion_mode', 'gated')
+            fusion_mode=kwargs.get('fusion_mode', 'gated'),
+            use_channel_attn=kwargs.get('use_channel_attn', True)
         ),
         # ── V2 ablation variants ──
         'v2_no_attention':   lambda: ArcFaultNetV2_NoAttention(in_channels=4, spec_in_channels=1),
