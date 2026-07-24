@@ -1781,6 +1781,16 @@ def get_model(
       - fs: Sampling frequency in Hz (default 1 MHz, use 102400 for decimated)
       - n_fft: FFT size for the 2D spectral branch
     """
+    # SSM-only track (Track B). Lazy import avoids a circular import
+    # (model_ssm imports building blocks from this module).
+    if model_name in ('arcssm', 'arcssm_selective'):
+        from model_ssm import ArcSSMNet
+        return ArcSSMNet(
+            in_channels=4,
+            deep_classifier=deep_classifier,
+            selective=(model_name == 'arcssm_selective'),
+        )
+
     models = {
         'arcfaultnet': lambda: ArcFaultNet(
             in_channels=in_channels,
