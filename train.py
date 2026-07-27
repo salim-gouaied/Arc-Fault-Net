@@ -978,7 +978,8 @@ def run_groupkfold_cv(
     fusion_mode: str = 'gated',
     use_channel_attn: bool = True,
     fs: float = 1_000_000,
-    n_fft: int = 512
+    n_fft: int = 512,
+    channel_dropout: float = 0.0
 ) -> Dict:
     """
     Group-based cross-validation preventing data leakage.
@@ -1147,6 +1148,13 @@ def run_groupkfold_cv(
         fold_dir.mkdir(exist_ok=True)
         writer = SummaryWriter(fold_dir / 'tensorboard')
 
+        # Background-load donors for the strong augmentation must come from this
+        # fold's training split only — never from the held-out campaign.
+        if getattr(dataset, 'strong_augment', False):
+            dataset.set_donor_pool(train_idx)
+            print(f"    strong augmentation ON — donor pool: "
+                  f"{len(dataset._donor_pool)} normal training cycles")
+
         train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
                                   shuffle=True, num_workers=num_workers,
                                   pin_memory=True, drop_last=True)
@@ -1180,7 +1188,7 @@ def run_groupkfold_cv(
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
-            fold_name=fold_name
+            fold_name=fold_name, channel_dropout=channel_dropout
         )
 
         # ── Evaluate on held-out test groups ──
@@ -1312,6 +1320,8 @@ def run_groupkfold_cv(
         'group_level': group_level,
         'val_mode': val_mode_eff,
         'pooled_oof': pooled,
+        'channel_dropout': channel_dropout,
+        'strong_augment': bool(getattr(dataset, 'strong_augment', False)),
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
@@ -1408,6 +1418,13 @@ def main():
                         choices=['gated', 'cross_attention', 'concat'],
                         help='V2 fusion: gated (cross-conditioned gating), '
                              'cross_attention (true Q/K/V), concat (simple concat)')
+    parser.add_argument('--strong-aug', action='store_true',
+                        help='Cross-campaign robustness augmentation on the raw cycle: '
+                             'pink noise at random SNR, spectral tilt, band limiting, '
+                             '±0.5 Hz mains jitter, time shift, half-cycle+polarity flip, '
+                             'and background-load mixing with normal cycles of the '
+                             'TRAINING split only. Off by default (keeps older runs '
+                             'reproducible).')
     parser.add_argument('--channel-dropout', type=float, default=0.0,
                         help='Per-channel dropout probability for temporal branch (0.0=off, '
                              '0.3=each ch has 30%% chance of being zeroed per batch). '
@@ -1437,7 +1454,8 @@ def main():
     dataset    = ArcFaultDataset(data_dir=str(data_dir),
                                   n_fft=args.n_fft,
                                   hop_length=args.hop_length,
-                                  channel_mode=channel_mode)
+                                  channel_mode=channel_mode,
+                                  strong_augment=args.strong_aug)
     output_dir = Path(args.output_dir)
 
     # Resolve fs: CLI override > auto-detected from config.json
@@ -1522,7 +1540,8 @@ def main():
             fusion_mode=args.fusion_mode,
             use_channel_attn=not args.no_channel_attn,
             fs=fs,
-            n_fft=args.n_fft
+            n_fft=args.n_fft,
+            channel_dropout=args.channel_dropout
         )
     else:
         run_single_training(

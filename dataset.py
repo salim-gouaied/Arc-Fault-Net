@@ -43,7 +43,8 @@ class ArcFaultDataset(Dataset):
         compute_stft: bool = True,
         device: str = 'cpu',
         training: bool = False,
-        channel_mode: str = 'raw2'
+        channel_mode: str = 'raw2',
+        strong_augment: bool = False
     ):
         """
         Args:
@@ -68,6 +69,10 @@ class ArcFaultDataset(Dataset):
         self.compute_stft = compute_stft
         self.device = device
         self.training = training  # Controls augmentation
+        # Cross-campaign robustness augmentation (see _augment_temporal_strong).
+        # OFF by default so every earlier run stays reproducible.
+        self.strong_augment = strong_augment
+        self._donor_pool = None  # set via set_donor_pool() — MUST exclude test data
         if channel_mode not in ('raw2', 'i_derived4'):
             raise ValueError(f"channel_mode must be 'raw2' or 'i_derived4', got {channel_mode!r}")
         self.channel_mode = channel_mode
@@ -147,13 +152,17 @@ class ArcFaultDataset(Dataset):
     
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # Get raw data
-        x_raw = torch.from_numpy(self.X[idx]).float()  # (n_channels, seq_len) — [V_ligne, I]
+        # .clone() is REQUIRED: X is float32, so .float() would return a view sharing
+        # memory with self.X and the in-place augmentation below would permanently
+        # corrupt the dataset array (and leak augmented samples into eval reads).
+        x_raw = torch.from_numpy(self.X[idx]).float().clone()  # (n_channels, seq_len) — [V_ligne, I]
         label = torch.tensor(self.y[idx], dtype=torch.float32)
         charge_idx = torch.tensor(self.charges[idx], dtype=torch.long)
 
         # Apply temporal augmentation on the RAW signal first (physical realism)
         if self.training:
-            x_raw = self._augment_temporal(x_raw)
+            x_raw = (self._augment_temporal_strong(x_raw) if self.strong_augment
+                     else self._augment_temporal(x_raw))
 
         if self.channel_mode == 'i_derived4':
             # ── V2 front-end: 4 channels derived from I(t) only ──────────
@@ -229,6 +238,109 @@ class ArcFaultDataset(Dataset):
                 x[c] = x[c] + torch.randn_like(x[c]) * noise_std
         return x
     
+    def set_donor_pool(self, allowed_indices: np.ndarray):
+        """
+        Restrict the background-load donors of the strong augmentation to these
+        indices (only their normal-labelled cycles are used).
+
+        Call this with the TRAINING indices of the current fold before building the
+        dataloaders. Without it the donors would be drawn from the whole dataset,
+        which would pull the held-out campaign's signals into training — unlabelled,
+        but still leakage.
+        """
+        allowed = np.asarray(allowed_indices)
+        self._donor_pool = allowed[self.y[allowed] == 0]
+        if len(self._donor_pool) == 0:
+            raise ValueError("donor pool is empty — no normal cycles in the training split")
+
+    def _augment_temporal_strong(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Cross-campaign robustness augmentation, applied to the RAW cycle.
+
+        Each transform simulates something that genuinely differs between two
+        acquisition benches, which is what the leave-one-campaign-out folds punish:
+
+          - pink (1/f) noise at a randomised SNR      -> different noise floor
+          - spectral tilt                             -> different sensor response
+          - band limiting                             -> different sensor bandwidth
+          - mains-frequency jitter (±0.5 Hz)          -> grid frequency drift
+          - circular time shift                       -> segmentation offset
+          - half-cycle shift + polarity flip          -> mains phase invariance
+          - background-load mixing                    -> different loads on the line
+            (currents of parallel loads add, so summing a normal cycle onto this one
+             is the physically correct operation; the arc label is unchanged)
+
+        Amplitude scaling is deliberately absent: the i_derived4 front-end already
+        normalises each cycle by its RMS, so a gain change is a no-op there.
+        """
+        M = x.shape[1]
+
+        # ── mains-frequency jitter: ±1% time scale, then crop/pad back to M ──
+        if torch.rand(1).item() < 0.5:
+            factor = 1.0 + (torch.rand(1).item() - 0.5) * 0.02
+            new_len = max(8, int(round(M * factor)))
+            y = torch.nn.functional.interpolate(
+                x.unsqueeze(0), size=new_len, mode='linear', align_corners=False
+            ).squeeze(0)
+            if new_len >= M:
+                x = y[:, :M]
+            else:
+                x = torch.cat([y, y[:, :M - new_len]], dim=1)
+
+        # ── circular time shift (segmentation offset) ──
+        if torch.rand(1).item() < 0.5:
+            x = torch.roll(x, shifts=int(torch.randint(-M // 20, M // 20 + 1, (1,)).item()), dims=1)
+
+        # ── half-cycle shift + polarity flip (same mains phase, opposite half) ──
+        if torch.rand(1).item() < 0.5:
+            x = -torch.roll(x, shifts=M // 2, dims=1)
+
+        # ── frequency-domain shaping: tilt + band limit ──
+        if torch.rand(1).item() < 0.7:
+            X = torch.fft.rfft(x, dim=1)
+            n_bins = X.shape[1]
+            freq = torch.arange(n_bins, dtype=torch.float32)
+            # Sensor response: a mild gain ramp, 1.0 at DC to (1 ± 0.3) at Nyquist.
+            # A power-law tilt was tried first and rejected — it attenuates the 50 Hz
+            # fundamental ~2.5x, which after per-cycle RMS normalisation doubles the
+            # energy of the |dI| and TKEO descriptors instead of perturbing them.
+            delta = (torch.rand(1).item() - 0.5) * 0.6
+            shape = 1.0 + delta * (freq / max(n_bins - 1, 1))
+            # band limit: attenuate above a random cutoff (50-100% of the band)
+            cutoff = int(n_bins * (0.5 + 0.5 * torch.rand(1).item()))
+            if cutoff < n_bins:
+                roll_off = torch.ones(n_bins)
+                roll_off[cutoff:] = torch.linspace(1.0, 0.05, n_bins - cutoff)
+                shape = shape * roll_off
+            x = torch.fft.irfft(X * shape.unsqueeze(0), n=M, dim=1)
+
+        # ── background-load mixing (parallel load on the same line) ──
+        if self._donor_pool is not None and torch.rand(1).item() < 0.5:
+            j = int(self._donor_pool[torch.randint(len(self._donor_pool), (1,)).item()])
+            donor = torch.from_numpy(self.X[j]).float()
+            if donor.shape == x.shape:
+                donor = torch.roll(donor, shifts=int(torch.randint(0, M, (1,)).item()), dims=1)
+                for c in range(x.shape[0]):
+                    rms_x = torch.sqrt(torch.mean(x[c] ** 2) + 1e-12)
+                    rms_d = torch.sqrt(torch.mean(donor[c] ** 2) + 1e-12)
+                    # mix level between -20 dB and -6 dB relative to this cycle
+                    ratio = 10 ** (-(6.0 + 14.0 * torch.rand(1).item()) / 20.0)
+                    x[c] = x[c] + donor[c] * (rms_x / rms_d) * ratio
+
+        # ── pink (1/f) noise at randomised SNR (30-55 dB) ──
+        n_bins = M // 2 + 1
+        noise = torch.fft.irfft(
+            torch.fft.rfft(torch.randn(x.shape[0], M), dim=1)
+            / torch.sqrt(torch.arange(n_bins, dtype=torch.float32) + 1.0).unsqueeze(0),
+            n=M, dim=1)
+        for c in range(x.shape[0]):
+            snr_db = 30.0 + 25.0 * torch.rand(1).item()
+            rms_x = torch.sqrt(torch.mean(x[c] ** 2) + 1e-12)
+            rms_n = torch.sqrt(torch.mean(noise[c] ** 2) + 1e-12)
+            x[c] = x[c] + noise[c] * (rms_x / rms_n) * 10 ** (-snr_db / 20.0)
+
+        return x
+
     def _augment_spectrogram(self, spec: torch.Tensor) -> torch.Tensor:
         """
         Light frequency masking on STFT spectrograms.
