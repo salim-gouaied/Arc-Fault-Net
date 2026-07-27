@@ -272,7 +272,7 @@ def train_model(
         )
 
         current_lr = optimizer.param_groups[0]['lr']
-        scheduler.step(epoch)
+        scheduler.step(epochs)
 
         history['train_loss'].append(train_metrics['loss'])
         history['train_acc'].append(train_metrics['accuracy'])
