@@ -1,0 +1,310 @@
+\begin{thebibliography}{10}
+
+\bibitem{aymax_microfrontends}
+{AYMAX}.
+\newblock Pourquoi une architecture de micro frontends ?
+\newblock \url{https://aymax.fr/pourquoi-une-architecture-de-micro-frontends/}.
+\newblock [En ligne]. Consulté le 17 avril 2026.
+
+\bibitem{scrum_figure}
+{Scrum.org}.
+\newblock Scrum framework.
+\newblock \url{https://www.scrum.org/resources/what-is-scrum}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{talan_org}
+{Talan}.
+\newblock Notre organisation.
+\newblock \url{https://www.talan.com/global/fr/qui-sommes-nous/notre-organisation/notre-organisation}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{gptw_talan}
+{Great Place To Work}.
+\newblock Talan.
+\newblock \url{https://www.greatplacetowork.fr/entreprise/talan/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{talan_secteurs}
+{Talan}.
+\newblock Nos secteurs.
+\newblock \url{https://www.talan.com/global/fr/nos-secteurs}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{single_spa_microfrontend}
+{single-spa}.
+\newblock Concept: Microfrontends.
+\newblock \url{https://single-spa.js.org/docs/microfrontends-concept/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{nx_microfrontend}
+{Nx}.
+\newblock Micro frontend architecture.
+\newblock \url{https://nx.dev/docs/technologies/module-federation/concepts/micro-frontend-architecture}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{module_federation}
+{webpack}.
+\newblock Module federation.
+\newblock \url{https://webpack.js.org/concepts/module-federation/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{webpack_module_federation_docs}
+{webpack}.
+\newblock Module federation documentation.
+\newblock \url{https://webpack.js.org/concepts/module-federation/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{webpack_module_federation_plugin}
+{webpack}.
+\newblock Modulefederationplugin.
+\newblock \url{https://webpack.js.org/plugins/module-federation-plugin/}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{module_federation_shared}
+{Module Federation}.
+\newblock Shared configuration.
+\newblock \url{https://module-federation.io/configure/shared}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{nx_mf_versions}
+{Nx}.
+\newblock Manage library versions with module federation.
+\newblock \url{https://nx.dev/docs/technologies/module-federation/concepts/manage-library-versions-with-module-federation}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{angular_docs}
+{Angular}.
+\newblock Angular documentation.
+\newblock \url{https://angular.dev/overview}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{vaswani_attention_2017}
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan~N. Gomez, Lukasz Kaiser, and Illia Polosukhin.
+\newblock Attention is all you need.
+\newblock In {\em Advances in Neural Information Processing Systems}, 2017.
+
+\bibitem{brown_language_models_2020}
+Tom~B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel~M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei.
+\newblock Language models are few-shot learners.
+\newblock In {\em Advances in Neural Information Processing Systems}, 2020.
+
+\bibitem{wooldridge_jennings_intelligent_agents_1995}
+Michael Wooldridge and Nicholas~R. Jennings.
+\newblock Intelligent agents: Theory and practice.
+\newblock {\em The Knowledge Engineering Review}, 10(2):115--152, 1995.
+\newblock \href {https://doi.org/10.1017/S0269888900008122} {\path{doi:10.1017/S0269888900008122}}.
+
+\bibitem{wooldridge_introduction_2009}
+Michael Wooldridge.
+\newblock {\em An Introduction to MultiAgent Systems}.
+\newblock John Wiley \& Sons, 2 edition, 2009.
+
+\bibitem{yao_react_2023}
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao.
+\newblock React: Synergizing reasoning and acting in language models.
+\newblock In {\em International Conference on Learning Representations}, 2023.
+\newblock URL: \url{https://openreview.net/forum?id=WE_vluYUL-X}.
+
+\bibitem{typescript_compiler_api}
+{Microsoft}.
+\newblock Using the compiler api.
+\newblock \url{https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{ts_morph}
+{ts-morph}.
+\newblock ts-morph documentation.
+\newblock \url{https://ts-morph.com/}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{angular_schematics}
+{Angular}.
+\newblock Generating code using schematics.
+\newblock \url{https://angular.dev/tools/cli/schematics}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{nx_generators}
+{Nx}.
+\newblock Generate code.
+\newblock \url{https://nx.dev/docs/features/generate-code}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{jscodeshift}
+{Meta Open Source}.
+\newblock jscodeshift: A javascript codemod toolkit.
+\newblock \url{https://github.com/facebook/jscodeshift}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{openrewrite}
+{OpenRewrite}.
+\newblock Openrewrite documentation.
+\newblock \url{https://docs.openrewrite.org/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{langgraph_docs}
+{LangChain AI}.
+\newblock Langgraph documentation.
+\newblock \url{https://langchain-ai.github.io/langgraph/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{langgraph_durable_execution}
+{LangChain}.
+\newblock Langgraph durable execution.
+\newblock \url{https://docs.langchain.com/oss/python/langgraph/durable-execution}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{albada_agents}
+Michael Albada.
+\newblock {\em Building Applications with AI Agents: Designing and Implementing Multiagent Systems}.
+\newblock O'Reilly Media, 2025.
+
+\bibitem{luigi}
+{Luigi Project}.
+\newblock Luigi -- the enterprise-ready micro frontend framework.
+\newblock \url{https://luigi-project.io/about}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{piral_migration}
+{Piral}.
+\newblock Migration of existing applications.
+\newblock \url{https://docs.piral.io/guidelines/tutorials/20-migrate-app}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{scrum_guide_fr}
+Ken Schwaber and Jeff Sutherland.
+\newblock Le guide scrum.
+\newblock \url{https://scrumguides.org/docs/scrumguide/v2020/2020-Scrum-Guide-French.pdf}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{python_docs}
+{Python Software Foundation}.
+\newblock Python documentation.
+\newblock \url{https://docs.python.org/3/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{springboot_docs}
+{Spring}.
+\newblock Spring boot documentation.
+\newblock \url{https://spring.io/projects/spring-boot}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{vscode_docs}
+{Microsoft}.
+\newblock Visual studio code documentation.
+\newblock \url{https://code.visualstudio.com/docs}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{github_docs}
+{GitHub}.
+\newblock Github docs.
+\newblock \url{https://docs.github.com/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{jira_docs}
+{Atlassian}.
+\newblock Jira software documentation.
+\newblock \url{https://support.atlassian.com/jira-software-cloud/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{pytest_docs}
+{pytest}.
+\newblock pytest documentation.
+\newblock \url{https://docs.pytest.org/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{docker_docs}
+{Docker}.
+\newblock Docker documentation.
+\newblock \url{https://docs.docker.com/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{sonarqube_docs}
+{SonarSource}.
+\newblock Sonarqube documentation.
+\newblock \url{https://docs.sonarsource.com/sonarqube/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{ollama_docs}
+{Ollama}.
+\newblock Ollama documentation.
+\newblock \url{https://github.com/ollama/ollama}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{nodejs_docs}
+{OpenJS Foundation}.
+\newblock Node.js documentation.
+\newblock \url{https://nodejs.org/docs/latest/api/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{pydantic_docs}
+{Pydantic}.
+\newblock Pydantic documentation.
+\newblock \url{https://docs.pydantic.dev/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{git_docs}
+{Git}.
+\newblock Git documentation.
+\newblock \url{https://git-scm.com/doc}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{talan_logo}
+{Talan}.
+\newblock Logo de talan.
+\newblock \url{https://www.talan.com/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{streamlit_docs}
+{Streamlit}.
+\newblock Streamlit documentation.
+\newblock \url{https://docs.streamlit.io/}.
+\newblock [En ligne]. Consulté le 16 avril 2026.
+
+\bibitem{module_federation_types}
+{Module Federation}.
+\newblock Type hinting.
+\newblock \url{https://module-federation.io/guide/basic/type-prompt.html}.
+\newblock [En ligne]. Consulté le 18 mai 2026.
+
+\bibitem{angular_architects_module_federation}
+{Angular Architects}.
+\newblock {@angular-architects/module-federation}.
+\newblock \url{https://www.npmjs.com/package/@angular-architects/module-federation}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{single_spa_migration}
+{single-spa}.
+\newblock Migrating existing spas.
+\newblock \url{https://single-spa.js.org/docs/migrating-existing-spas/}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{legacyleap_spa_mfe}
+{LegacyLeap}.
+\newblock Spa to microfrontends migration with module federation.
+\newblock \url{https://www.legacyleap.ai/blog/spa-to-microfrontends-module-federation/}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{piral_migrate_app}
+{Piral}.
+\newblock Migrate existing applications.
+\newblock \url{https://docs.piral.io/guidelines/tutorials/20-migrate-app}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{bit_migrate_mfe}
+{Bit}.
+\newblock How to migrate your existing application to micro frontend architecture.
+\newblock \url{https://blog.bitsrc.io/how-to-migrate-your-existing-application-to-micro-frontend-architecture-4fff95fac979}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{bit_module_federation}
+{Bit}.
+\newblock Mastering micro frontends with module federation and bit.
+\newblock \url{https://bit.dev/blog/mastering-micro-frontends-with-module-federation-and-bit-ljn4ruah/}.
+\newblock [En ligne]. Consulté le 3 mai 2026.
+
+\bibitem{goodfellow_gans_2014}
+Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio.
+\newblock Generative adversarial nets.
+\newblock In {\em Advances in Neural Information Processing Systems}, 2014.
+
+\end{thebibliography}

@@ -1,0 +1,40 @@
+\chapter*{Introduction générale}
+\addcontentsline{toc}{chapter}{Introduction générale}
+
+\noindent\rule{\linewidth}{1pt}
+\vspace{0.3cm}
+
+Dans un contexte de transformation digitale, les entreprises cherchent à moderniser leurs applications web afin d'améliorer leur maintenabilité, leur évolutivité et leur capacité à intégrer rapidement de nouvelles fonctionnalités. Les applications front-end développées sous forme monolithique peuvent devenir difficiles à faire évoluer lorsque leur taille augmente, que les dépendances internes se multiplient et que plusieurs équipes doivent intervenir sur le même code.
+
+\medskip
+
+Pour répondre à ces limites, l'architecture micro-frontend propose de décomposer une application front-end en plusieurs parties plus autonomes, chacune pouvant être développée, testée et maintenue de manière plus indépendante. Cependant, la migration d'une application Angular monolithique vers une telle architecture reste une opération complexe. Elle nécessite l'analyse du projet existant, l'identification des domaines fonctionnels, la réorganisation des composants, des routes et des services, ainsi que la validation progressive du résultat obtenu.
+
+\medskip
+
+Ce projet de fin d'études, réalisé au sein de Talan Tunisie, vise à concevoir une solution capable d'assister cette migration. L'objectif est de mettre en place un pipeline automatisé permettant d'analyser une application Angular monolithique, de proposer un découpage cohérent, de générer une architecture micro-frontend cible, puis de migrer les principaux éléments applicatifs tout en produisant une documentation exploitable.
+
+\medskip
+
+La solution proposée repose sur une approche multi-agent, où chaque agent prend en charge une étape précise du processus : analyse, conception, génération, migration, validation ou documentation. Cette organisation permet de mieux contrôler la complexité de la migration, de limiter les erreurs et de rendre le processus plus structuré et plus facilement extensible.
+
+\vspace{0.6cm}
+\noindent\rule{\linewidth}{0.4pt}
+\vspace{0.2cm}
+
+\noindent\textbf{Structure du rapport}
+
+\vspace{0.3cm}
+
+\noindent Ce rapport est organisé en cinq chapitres :
+
+\begin{itemize}[leftmargin=1.8cm, itemsep=3pt, topsep=4pt]
+    \item \textbf{Chapitre 1 -- Cadre général et fondements du projet :} présente l'entreprise d'accueil, la problématique, les objectifs, la méthodologie adoptée ainsi que les notions théoriques et technologiques nécessaires à la compréhension du sujet.
+    \item \textbf{Chapitre 2 -- Analyse et planification :} détaille les besoins fonctionnels et non fonctionnels, l'architecture de la solution proposée et l'organisation du travail.
+    \item \textbf{Chapitre 3 -- Release 1 :} présente la phase de préparation du pipeline et la génération structurelle du projet micro-frontend.
+    \item \textbf{Chapitre 4 -- Release 2 :} présente la migration détaillée, l'intégration finale, la validation, la documentation et la stabilisation du projet généré.
+    \item \textbf{Chapitre 5 -- Réalisation :} se concentre sur les interfaces du migrateur, le suivi de l'exécution, la sortie du dossier \texttt{output}, le lancement du nouveau projet et la documentation produite.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\rule{\linewidth}{1pt}

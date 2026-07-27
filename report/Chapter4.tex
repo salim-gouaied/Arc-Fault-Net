@@ -1,0 +1,383 @@
+\chapter{Implementation and Results}
+\label{chap:results}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+This chapter presents the implementation of the solution and the experimental results. Rather than reporting only the final figures, it deliberately retraces the \emph{iterative engineering process} that produced them: each phase is presented with its result, the diagnosis of what limited it, and the decision that this diagnosis motivated. The chapter then presents the ablation studies --- including a methodological flaw that was detected and corrected along the way --- the generalization measurements on unseen recordings, and a forensic analysis of the residual errors, which directly motivates the multi-model system of Chapter~\ref{chap:presentation}.
+
+\section{Working environment}
+
+All development was carried out on a Linux workstation, in Python 3.12, with PyTorch for model definition and training, NumPy/SciPy for signal processing, scikit-learn for metrics and cross-validation utilities, and Matplotlib for visualization. The codebase is organized as a small library of single-responsibility modules:
+
+\begin{table}[H]
+\centering
+\caption{Organization of the codebase.}
+\label{tab:codebase}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{|l|p{9.6cm}|}
+\hline
+\textbf{Module} & \textbf{Responsibility} \\
+\hline
+\texttt{dataset.py} & Data loading, on-the-fly derived channels and STFT, augmentations \\
+\hline
+\texttt{model.py} & All architectures: branches, attention modules, ablation variants \\
+\hline
+\texttt{train.py} & Training loop, early stopping, checkpointing, run archiving \\
+\hline
+\texttt{evaluate.py} & Test-set evaluation, per-experiment error tracing \\
+\hline
+\texttt{merge\_datasets.py} & Campaign merging with inter-campaign holdout \\
+\hline
+\texttt{ablation\_v3.py} & Corrected component-wise ablation study \\
+\hline
+\texttt{groupkfold\_comparison.py} & Recording-level cross-validation \\
+\hline
+\texttt{scripts/} & Segmentation, oracle labeling, decimation and QA plots \\
+\hline
+\end{tabular}
+\end{table}
+
+Every training run archives its full configuration, metric curves and best checkpoint under a timestamped directory in \texttt{runs/}, which makes every number in this chapter traceable to the exact configuration that produced it.
+
+\section{Training configuration}
+\label{sec:training-config}
+
+Unless stated otherwise, all experiments share the configuration of Table~\ref{tab:hyperparams}, so that architectural comparisons are performed \emph{ceteris paribus}.
+
+\begin{table}[H]
+\centering
+\caption{Common training configuration.}
+\label{tab:hyperparams}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Optimizer & AdamW, learning rate $3 \times 10^{-4}$, weight decay $5 \times 10^{-4}$ \\
+\hline
+Loss & BCE with logits, \texttt{pos\_weight} = inverse class frequency \\
+\hline
+Scheduler & Cosine annealing with warm restarts \\
+\hline
+Batch size & 64 \\
+\hline
+Maximum epochs & 200, early stopping on validation F1 (patience 15) \\
+\hline
+Gradient clipping & max norm 0.5 \\
+\hline
+Decision threshold & 0.5 on the sigmoid output \\
+\hline
+Split & stratified 70/15/15 (train/validation/test) \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{The iterative experimental journey}
+\label{sec:journey}
+
+Figure~\ref{fig:timeline} summarizes the performance trajectory across the project; each phase is detailed below with its diagnosis.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\footnotesize]
+% Axis
+\draw[-{Stealth[length=3mm]}, thick] (0,0) -- (14.6,0);
+% Phase marks: x, top label, bottom label
+\foreach \x/\top/\bot in {
+  0.8/{Apr.}/{\textbf{100\%}\\ overfitted},
+  3.0/{May 4}/{\textbf{89.6\%}\\ honest eval.},
+  5.0/{May 13}/{\textbf{89.1\%}\\ mini model},
+  7.0/{May 21--26}/{\textbf{95--96\%}\\ V1 + SE},
+  9.2/{June 1--8}/{\textbf{97--98\%}\\ V2 single-cycle},
+  11.4/{June 22--26}/{\textbf{98.8\%}\\ SE + deep + X-attn},
+  13.6/{July 7--10}/{ablation +\\ GroupKFold}%
+}{
+  \draw[thick] (\x,0.12) -- (\x,-0.12);
+  \node[align=center, anchor=south] at (\x,0.25) {\top};
+  \node[align=center, anchor=north] at (\x,-0.3) {\bot};
+}
+\end{tikzpicture}
+\caption{Performance trajectory of the single-cycle detector over the internship (test accuracy on the current evaluation protocol of each date).}
+\label{fig:timeline}
+\end{figure}
+
+\subsection{Phase 0 --- A misleading perfect score}
+
+The first prototype (V1) was a dual-branch CNN with Gabor-initialized 1-D filters on the raw 2-channel signals ($V_{\text{line}}$, $I$) at 1~MHz (20\,000-point windows), a 2-D branch on the STFT, a joint channel/spatial attention fusion, and $\approx$~337k parameters. Trained and tested on the small initial dataset, it reached \textbf{100\% accuracy}.
+
+\paragraph{Diagnosis.} This score was meaningless. With $\approx$~500 samples for 337k parameters --- an overparameterization ratio above 600:1 --- the network sat deep in the interpolation regime where it can fit arbitrary labels \cite{zhang2017rethinking}, and the evaluation reused data from the training distribution. The first engineering decision of the project was therefore not architectural but methodological: build a larger, multi-campaign dataset and a strict split before trusting any number.
+
+\subsection{Phase 1 --- The reality check}
+
+On the combined multi-campaign dataset with a proper stratified 70/15/15 split, the same architecture dropped to:
+
+\begin{table}[H]
+\centering
+\caption{First honest evaluation (V1, combined dataset).}
+\label{tab:phase1}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Run} & \textbf{Accuracy} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{Params} \\
+\hline
+V1, single split & 89.64\% & 88.66\% & 93.15\% & 84.59\% & 337k \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Diagnosis.} The 10-point drop revealed the distribution shift between campaigns: the model had learned setup-specific features that did not transfer. The precision/recall asymmetry (93.2\% vs.\ 84.6\%) showed a conservative decision boundary biased toward \textsc{normal} --- the worst direction for a safety device, where false negatives are the catastrophic error. Improving \emph{recall under distribution shift} became the guiding objective.
+
+\subsection{Phase 2 --- Capacity probe: is the model too small or too big?}
+
+Before adding capacity, the opposite hypothesis was tested: a drastically reduced model ($\approx$~85k parameters, $-75\%$) was trained on the same data and reached \textbf{89.14\%} accuracy (F1 88.17\%) --- statistically indistinguishable from the 337k model.
+
+\paragraph{Diagnosis.} If quadrupling the parameters does not help, the bottleneck is not model capacity (variance) but \emph{representation quality} (bias): neither model had access to features expressive enough to separate the classes across loads. This bias--variance reading redirected the effort away from scaling and toward \textbf{feature engineering and input representation} --- the origin of the physics-informed channels of Section~\ref{sec:derived-channels}.
+
+\subsection{Phase 3 --- Squeeze-and-excitation and hyperparameter search on V1}
+
+Adding SE blocks after each convolutional stage, together with a systematic learning-rate/batch/seed search, lifted V1 to the 95--96\% range:
+
+\begin{table}[H]
+\centering
+\caption{V1 + SE, multiple seeds (selection of runs).}
+\label{tab:phase3}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Run} & \textbf{Accuracy} & \textbf{F1} & \textbf{Params} \\
+\hline
+Run 1 & 92.97\% & 92.47\% & 386k \\
+\hline
+Run 2 (same arch., new seed) & 94.39\% & 94.07\% & 386k \\
+\hline
+Run 3 (reduced) & 95.52\% & 95.16\% & 321k \\
+\hline
+Run 4 (seed variation) & 94.11\% & 93.70\% & 321k \\
+\hline
+Run 5 (best V1) & \textbf{96.38\%} & \textbf{96.08\%} & 344k \\
+\hline
+Run 6 & 96.07\% & 95.73\% & 321k \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Diagnosis.} Performance improved, but the spread across seeds (93--96\%) exposed an unstable optimization landscape: sharp minima of varying generalization quality \cite{keskar2017large}. Two conclusions followed: (i) any further comparison must be multi-seed to be meaningful; (ii) the architecture still worked \emph{against} the data (1~MHz multi-cycle windows, raw channels), motivating a full redesign rather than further tuning.
+
+\subsection{Phase 4 --- The V2 redesign: single-cycle, physics-informed, embedded-realistic}
+
+The V2 architecture implemented the design of Chapter~\ref{chap:design}: single-cycle inputs (2\,048 points at 102.4~kHz after the decimation study), removal of the uninformative $V_{\text{line}}$ input, the four derived channels, plain GELU convolutions instead of Gabor filters, the FrequencyGate and asymmetric pooling in the spectral branch, and a gated fusion of the pooled branch vectors. Accuracy jumped to the 97--98\% range (best runs 98.16\%, 97.98\%, 97.73\%; weakest seeds 93.7--94.7\%).
+
+\paragraph{Diagnosis.} The representation change --- not added capacity --- delivered the gain, confirming the Phase 2 analysis: the physics-informed single-cycle formulation reduced the approximation bias. The persistent inter-seed variance, however, remained the dominant problem.
+
+\subsection{Phase 4.5 --- A negative result: the inter-cycle residual}
+
+Following Dowalla \emph{et al.} \cite{dowalla2023}, the $|\Delta I|$ channel was replaced by an \emph{inter-cycle residual} ($I_k - I_{k-1}$, the difference between consecutive cycles of the same recording). The variant performed consistently \emph{worse} and was reverted.
+
+\paragraph{Diagnosis.} The residual requires a valid preceding cycle: first-in-group samples lack one, transitions contaminate it, and the feature couples the sample to acquisition metadata that a deployed device would have to maintain. This negative result was retained as a design lesson --- \emph{inter-cycle information is valuable but belongs to a sequence model, not to a per-cycle input channel} --- which is precisely the role assigned to the memory-based expert of the target system.
+
+\subsection{Phase 5 --- Stability engineering: SE blocks and deep classifier head}
+
+Porting the SE blocks and the three-layer classification head into V2 ($+3.8\%$ parameters) produced runs between 94.5\% and 98.8\%, with mean gains of $+1.69$~points accuracy, $+2.02$ F1 and $+3.48$ recall over the V2 baseline --- and, more importantly, a \textbf{28--51\% reduction of the coefficient of variation} across seeds on all metrics.
+
+\paragraph{Diagnosis.} SE and the deep head act primarily as \emph{stabilizers} (input-conditioned channel masking; batch-normalized, progressively regularized head), narrowing the gap between lucky and unlucky seeds rather than pushing the best seed higher. For an industrial device, reproducibility of training is itself a requirement, so both components were kept --- with their true role documented by the multi-seed evidence rather than by a single lucky run.
+
+\subsection{Phase 6 --- Re-engineering the fusion: from pooled gating to sequence-level cross-attention}
+\label{sec:phase6}
+
+The fusion stage of V2 was, until this phase, a \emph{channel-level gated fusion} --- a deliberate initial choice resting on an explicit hypothesis (H1): \emph{the pooled summary of each branch is individually sufficient, and only the relative weighting of the two branches needs to adapt to each input}. In the project's data regime ($\approx$~10k cycles), this was the prudent option: few parameters devoted to interaction, no component known to require large corpora, negligible computation.
+
+\medskip
+
+Two converging observations put H1 in question. Empirically, the errors persisting through Phase 5 were concentrated on \emph{hard positives} --- arc cycles with subtle signatures --- whose recall improved much more slowly than overall accuracy. Structurally, an analysis of the module explained why it could not help on precisely those samples: both branches are pooled \emph{before} fusion, so when a spectral burst and a waveform discontinuity co-occur at the same instant, the fusion layer only ever receives two global averages in which that coincidence has already been erased --- a \emph{temporal bottleneck}. This analysis produced the competing hypothesis (H2): \emph{part of the discriminative evidence lies in the time-localized co-occurrence of events across the two views, and must be exploited before pooling}.
+
+\medskip
+
+The revision that tests H2 is the sequence-level bidirectional Q/K/V cross-attention of Section~\ref{sec:cross-attention}, adopted with its trade-off stated in advance: expected gains --- position-wise cross-domain alignment, hence recall on hard positives, plus a \emph{reduction} of the parameter count (shared $1{\times}1$ projections replacing dense gating layers, 364k $\to$ 315k); accepted costs --- a per-cycle attention computation quadratic in the sequence length, and the known data-hunger of attention mechanisms, mitigated by the small key dimension, the single fusion layer and the residual identity path. The best configuration reached \textbf{98.77\% accuracy / 98.68\% F1}, and the production validation runs of July consistently landed at 98.2--98.8\% with this fusion, with or without SE/deep head (e.g.\ 98.83\%, 98.59\%, 98.40\%).
+
+\medskip
+
+The controlled comparison of the two fusion mechanisms (same architecture, no SE, no deep head, same protocol) isolates the contribution of the fusion alone:
+
+\begin{table}[H]
+\centering
+\caption{Controlled comparison of the fusion mechanisms (identical everything else).}
+\label{tab:fusion-comparison}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Metric} & \textbf{Gated fusion} & \textbf{Sequence-level Q/K/V} & \textbf{Delta} \\
+\hline
+Accuracy & 97.91\% & \textbf{98.65\%} & $+0.74$ \\
+\hline
+F1 & 97.71\% & \textbf{98.54\%} & $+0.82$ \\
+\hline
+Recall & 95.90\% & \textbf{97.75\%} & $\mathbf{+1.85}$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Diagnosis.} The results validate H2 exactly where it made its prediction: the disproportionate recall improvement ($+1.85$ vs.\ $+0.74$ accuracy) shows that position-aware fusion mainly recovers \emph{hard positives} --- arc cycles with subtle signatures, where confirming a waveform discontinuity against the spectral content at the same instant makes the difference. This is exactly the failure mode identified in Phase 1 as the safety-critical one, and the anticipated risk (attention underperforming in a small-data regime) did not materialize at this dataset size.
+
+\section{Ablation studies}
+\label{sec:ablation}
+
+\subsection{A flawed first ablation --- and what it taught us}
+\label{sec:flawed-ablation}
+
+A first ablation study, run in June on the gated-fusion V2, produced a troubling result: the variant \emph{without} the attention mechanisms outperformed the full model (98.53\% vs.\ 98.10\% accuracy) with $\approx$~100k fewer parameters. Before concluding that attention was useless, the result was investigated --- and the investigation invalidated the study itself:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Confounded variables.} Code inspection showed that the ``no attention'' variant removed \emph{two} components at once: the cross-branch fusion \emph{and} the FrequencyGate. No conclusion about either component individually was possible --- the study violated the one-factor-at-a-time principle;
+    \item \textbf{Uncontrolled capacity.} Removing $\approx$~100k parameters (28\%) on a $\approx$~10k-sample dataset is a regularization in itself; the smaller variant also converged later (best epoch 63 vs.\ 48), a typical signature of a better-regularized model. The comparison therefore mixed the effect of the components with the effect of capacity;
+    \item \textbf{No statistical significance.} The study used a single seed and a single split; a $+0.43$-point difference on a 1\,630-sample test set ($\approx$~7 samples) is well within seed-to-seed noise.
+\end{itemize}
+
+Beyond its immediate conclusions, this episode shaped the experimental discipline of the rest of the project: \emph{one factor at a time, capacity accounted for, and no claim without dispersion estimates}.
+
+\subsection{The corrected ablation study}
+\label{sec:ablation-v3}
+
+The ablation was redesigned accordingly: each variant removes \emph{exactly one} component from the full model (SE + deep head + cross-attention), all variants share the training configuration of Table~\ref{tab:hyperparams} and the same split (seed 42).
+
+\begin{table}[H]
+\centering
+\caption{Corrected component-wise ablation (single split, seed 42).}
+\label{tab:ablation}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|c|c|r|}
+\hline
+\textbf{Variant} & \textbf{Accuracy} & \textbf{F1} & \textbf{$\Delta$ Acc.} & \textbf{Params} \\
+\hline
+\textbf{Full model} (reference) & \textbf{98.77\%} & \textbf{98.68\%} & (ref.) & 315\,421 \\
+\hline
+w/o cross-attention ($\to$ concat) & 97.06\% & 96.79\% & $\mathbf{-1.72}$ & 265\,373 \\
+\hline
+w/o spectral branch & 95.58\% & 95.05\% & $\mathbf{-3.19}$ & 68\,061 \\
+\hline
+w/o temporal branch & 96.20\% & 95.82\% & $\mathbf{-2.58}$ & 174\,977 \\
+\hline
+w/o frequency gate & 98.53\% & 98.40\% & $-0.25$ & 315\,417 \\
+\hline
+w/o SE blocks & 99.14\% & 99.07\% & $+0.37$ & 304\,165 \\
+\hline
+w/o deep classifier & 98.96\% & 98.87\% & $+0.18$ & 313\,181 \\
+\hline
+w/o derived channels & 98.83\% & 98.74\% & $+0.06$ & 313\,885 \\
+\hline
+Baseline CNN (single branch) & 89.20\% & 88.48\% & $\mathbf{-9.57}$ & 60\,193 \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Reading the table honestly.} Three components carry the architecture: the \textbf{dual-branch structure} itself ($-9.57$ points down to the baseline CNN), the \textbf{spectral branch} ($-3.19$) and the \textbf{temporal branch} ($-2.58$) --- confirming that the two views are complementary --- followed by the \textbf{sequence-level cross-attention} ($-1.72$ vs.\ simple concatenation). The small positive deltas for SE, deep head and derived channels are \emph{within single-split noise} and must not be read as ``these components hurt'': the multi-seed evidence of Phase 5 shows their contribution is variance reduction (CV $-28$ to $-51\%$), a benefit structurally invisible to a single-split ablation. This distinction --- peak-performance components vs.\ stability components --- is only visible because both protocols (single-split ablation \emph{and} multi-seed repetition) were run.
+
+\subsection{Component contribution ranking}
+
+\begin{table}[H]
+\centering
+\caption{Final ranking of component contributions.}
+\label{tab:ranking}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{|c|l|c|p{5.6cm}|}
+\hline
+\textbf{Rank} & \textbf{Component} & \textbf{Impact} & \textbf{Interpretation} \\
+\hline
+1 & Dual-branch architecture & $-9.57$ & Temporal + spectral joint analysis is the foundational choice \\
+\hline
+2 & Spectral branch (STFT) & $-3.19$ & Captures broadband arc plasma noise \\
+\hline
+3 & Temporal branch & $-2.58$ & Captures waveform distortion and re-ignition spikes \\
+\hline
+4 & Cross-attention fusion & $-1.72$ & Position-aware fusion beats concatenation; largest recall gain \\
+\hline
+5 & Frequency gate & $-0.25$ & Learned band selection (marginal on this split) \\
+\hline
+6--8 & SE, deep head, derived channels & $\approx 0$ & Stability tools: reduce seed-to-seed CV by 28--51\% (multi-seed evidence) \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Generalization to unseen recordings}
+\label{sec:generalization}
+
+The random-split figures above measure performance on new cycles from \emph{seen} conditions. The recording-level GroupKFold protocol (Section~\ref{sec:protocol}) measures the project's actual objective: performance on entire experiments --- load, electrode material, session --- never seen during training.
+
+\begin{table}[H]
+\centering
+\caption{Recording-level GroupKFold (5 folds): mean $\pm$ standard deviation across folds.}
+\label{tab:groupkfold}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Metric} & \textbf{Value (mean $\pm$ std)} \\
+\hline
+Accuracy & $93.37\% \pm 8.12$ \\
+\hline
+F1 score & $91.71\% \pm 10.21$ \\
+\hline
+Precision & $97.24\% \pm 5.22$ \\
+\hline
+Recall & $87.90\% \pm 15.33$ \\
+\hline
+Specificity & $97.95\% \pm 3.95$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Analysis of the generalization gap.} Three structural facts emerge:
+
+\begin{enumerate}[itemsep=2pt]
+    \item \textbf{The gap is real but asymmetric.} Accuracy drops from $\approx$~98.8\% (random split) to $93.4\%$ on unseen recordings, but precision and specificity remain high ($\approx$~97--98\%): on unknown conditions the detector rarely raises false alarms --- the failure mode is \emph{missed arcs} (recall $87.9\%$), i.e.\ arc signatures reshaped by an unseen load;
+    \item \textbf{The dispersion is dominated by a few hard folds.} Several folds are solved perfectly (up to 100\%), while folds whose held-out recording contains a unique load/material combination degrade sharply --- the large standard deviations reflect this bimodality rather than a uniform degradation;
+    \item \textbf{Single-cycle detection is the binding constraint.} A recall of 87.9\% \emph{per cycle} does not mean 12\% of faults are missed: a real fault produces many arcing cycles, and the probability of missing $k$ consecutive cycles decays geometrically. This is precisely the argument for the multi-cycle voting layer: aggregating even a weakened per-cycle detector over an 8-cycle window recovers most of the lost sensitivity, at zero architectural cost.
+\end{enumerate}
+
+\section{False positive forensics}
+\label{sec:fp-forensics}
+
+Because nuisance tripping dominates industrial acceptability, every false positive of the best run was traced back, via the sample metadata, to its source recording and cycle index. The three FPs decompose into two physical situations:
+
+\begin{table}[H]
+\centering
+\caption{Forensic analysis of the three false positives (best run).}
+\label{tab:fp}
+\renewcommand{\arraystretch}{1.35}
+\small
+\begin{tabular}{|p{3.6cm}|p{5.2cm}|p{5.2cm}|}
+\hline
+\textbf{Sample} & \textbf{Physical situation} & \textbf{Why it fools a single-cycle detector} \\
+\hline
+Steel--copper electrodes + kettle load & Contact resistance under $\sim$10 A produces broadband micro-noise & Possibly genuine micro-arcing: the ``error'' may be a correct detection of a sub-threshold phenomenon \\
+\hline
+Inductive (LR) load, cycle 15 & Start-up transient & Inrush $\mathrm{d}I/\mathrm{d}t$ spikes mimic re-ignition discontinuities \\
+\hline
+Inductive (LR) load, cycle 16 & Same transient, next cycle & Same event seen twice --- errors are temporally clustered \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation.} These are not modeling defects but \textbf{physical ambiguities of the single-cycle formulation}: within one isolated cycle, a start-up transient and an arc re-ignition can be genuinely indistinguishable. The decisive information is \emph{temporal context}: a transient decays after one or two cycles, while an arc persists and fluctuates. The clustered nature of the errors (two consecutive cycles of the same event) confirms it. No single-cycle architecture, however refined, can resolve this ambiguity --- which closes the loop with the system architecture of Chapter~\ref{chap:presentation}: the memory-based expert and the voting layer are not an optional extension but the structurally required next step.
+
+\section{Discussion and limitations}
+
+Three limitations bound the scope of the results and define the continuation of the work:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Data regime.} With 10\,860 cycles from two campaigns on one bench, the corpus remains small and laboratory-bound. The attention mechanisms in particular are known to profit from larger, more heterogeneous corpora; the observed gains ($+0.74$ accuracy, $+1.85$ recall for cross-attention) should be re-estimated as the dataset grows toward real domestic recordings;
+    \item \textbf{Single-split ablation.} The corrected ablation isolates components rigorously but on one split; multi-seed confidence intervals for each variant (and paired tests) would be needed to turn the small deltas into statistically defensible claims. The multi-seed evidence gathered in Phase 5 partially fills this gap for SE and the deep head;
+    \item \textbf{Per-cycle decisions.} All reported metrics are per-cycle. The deployment-level metrics that matter for IEC~62606 compliance --- reaction time, missed-fault probability over an observation window, nuisance-trip rate per operating hour --- require the multi-cycle decision layer, whose design is specified but not yet implemented.
+\end{itemize}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Starting from a misleading perfect score, the project followed a diagnosis-driven trajectory --- honest evaluation (89.6\%), bias--variance analysis, physics-informed redesign (97--98\%), stability engineering, and position-aware cross-attention fusion (98.8\%, $+1.85$ recall) --- with each step justified by the failure analysis of the previous one. A flawed ablation was detected, corrected, and turned into a methodological standard for the project; recording-level validation quantified the generalization gap (93.4\% $\pm$ 8.1) and located it in per-cycle recall on unseen loads; and the forensic analysis of the three residual false positives demonstrated that the remaining errors are physically unsolvable at the single-cycle scale. The single-cycle expert is thus validated, understood, and characterized --- ready to take its place as the first pillar of the multi-model voting system.

@@ -1,0 +1,35 @@
+\chapter*{General Conclusion}
+\addcontentsline{toc}{chapter}{General Conclusion}
+
+This final-year project addressed the detection of series arc faults in residential electrical installations --- a safety-critical problem left open by conventional protection devices, and whose central difficulty is generalization: a detector must recognize an arc signature it has never seen, through a load it has never seen, without ever raising a false alarm. The answer proposed by this work is a \emph{detection system} rather than a lone classifier: several complementary experts observing a multi-cycle window, merged by a voting decision layer. This report presented the realization of its first and most fundamental pillar --- the single-cycle detector Arc-FaultNet --- together with the data and evaluation infrastructure on which every future component of the system will rest.
+
+\medskip
+
+The first contribution is a complete, reproducible \textbf{data engineering pipeline}: controlled arc experiments acquired on the Institut Jean Lamour bench (three channels at 1~MHz, varied loads and electrode materials over two campaigns), segmentation into individual 50~Hz cycles anchored on the mains voltage, automatic labeling using the arc voltage as a laboratory-only oracle with a calibrated three-zone rule, per-cycle normalization eliminating the amplitude shortcut, and anti-aliased decimation to 102.4~kHz justified by both the physics of the arc (signatures below 50~kHz) and the constraints of embedded deployment. The result is a versioned corpus of 10\,860 labeled cycles with per-sample metadata, plus a never-touched inter-campaign holdout.
+
+\medskip
+
+The second contribution is \textbf{Arc-FaultNet} itself: a $\approx$~315k-parameter dual-branch network in which a temporal branch reads four physics-informed channels (normalized current, first difference, Teager--Kaiser energy, sliding RMS), a spectral branch reads the STFT spectrogram through a learnable frequency gate with time-preserving pooling, and a bidirectional multi-head Q/K/V cross-attention aligns and fuses the two views before a regularized classification head. On the combined dataset the final model reaches \textbf{98.8\% accuracy and 98.7\% F1}, and the controlled comparison shows that the sequence-level cross-attention contributes $+0.74$ points of accuracy and $+1.85$ points of recall over the initial gated fusion --- recovering precisely the hard positives that matter for a safety device. This fusion revision itself illustrates the method followed throughout: the gated fusion was first chosen under an explicit small-data-regime hypothesis, the error analysis identified its structural limit (the temporal bottleneck), and the replacement was adopted with its trade-off stated in advance --- alignment capability and a 48k-parameter reduction gained, a quadratic attention cost and a data-hunger risk accepted and mitigated.
+
+\medskip
+
+The third contribution is methodological. The project advanced by \textbf{diagnosis rather than accumulation}: an initial 100\% score was identified as interpolation-regime overfitting; a capacity probe reframed the problem from model size to representation quality; a negative result (the inter-cycle residual channel) was traced to its structural cause and converted into a design principle; a flawed ablation study --- confounded variables, uncontrolled capacity, single-seed claims --- was detected, corrected, and replaced by a one-factor-at-a-time protocol that finally ranked the components: dual-branch structure first ($-9.6$ points when reduced to a single-branch CNN), spectral and temporal branches next ($-3.2$ and $-2.6$), cross-attention fourth ($-1.7$), with squeeze-and-excitation and the deep head established as stability tools (28--51\% variance reduction across seeds) rather than peak-performance components. Recording-level GroupKFold validation then quantified what a random split cannot: on entirely unseen experimental conditions, accuracy settles at $93.4\% \pm 8.1$, with high precision preserved ($97.2\%$) and the loss concentrated in per-cycle recall ($87.9\%$).
+
+\medskip
+
+These last numbers, together with the forensic analysis of the three residual false positives --- a start-up transient seen on two consecutive cycles, and a degraded contact plausibly micro-arcing --- establish the report's closing argument: the remaining errors are \emph{physically unsolvable at the single-cycle scale}. What distinguishes an inrush transient from an arc is not any property of one cycle, but persistence across cycles.
+
+\medskip
+
+The perspectives follow directly, and constitute the planned continuation of this work:
+
+\begin{itemize}[itemsep=3pt]
+    \item \textbf{The memory-based expert.} A sequence model with internal state --- a state space model (SSM) or a recurrent architecture --- consuming the stream of cycles (or of Arc-FaultNet's per-cycle embeddings) to recognize the temporal pattern of arc occurrence: persistence, intermittency, ignition/extinction dynamics over a window of up to eight cycles, as tolerated by IEC~62606;
+    \item \textbf{The third expert and the voting layer.} A detector built on a different principle (e.g.\ descriptor-based statistics or inter-cycle residual analysis, where that information naturally belongs), chosen for decorrelated failure modes, and a voting rule ($k$-of-$n$ over the window, possibly weighted by per-expert confidence) tuned on deployment-level metrics: reaction time, missed-fault probability per event, nuisance trips per operating hour;
+    \item \textbf{Data expansion toward the field.} New campaigns with masking loads (dimmers, switched-mode supplies), combined and parallel loads, and ultimately recordings from real domestic installations --- the regime where the attention mechanisms and the ensemble design are expected to show their full value;
+    \item \textbf{Embedded deployment.} Quantization and export of the $\approx$~315k-parameter model to a microcontroller target, and measurement of the true per-cycle inference latency within the 20~ms budget.
+\end{itemize}
+
+\medskip
+
+Beyond its technical outcome, this project was an exercise in engineering judgment: trusting no number before understanding its protocol, treating every failure as information, and designing not a model that scores well, but a system whose remaining errors are understood --- and already have an owner in the architecture of its next version.

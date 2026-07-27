@@ -1,0 +1,51 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+\noindent\rule{\linewidth}{1pt}
+\vspace{0.3cm}
+
+\noindent Series arc faults are one of the leading causes of electrical fires in residential installations. Because the fault current remains bounded by the load, they are invisible to conventional circuit breakers and residual current devices, and the IEC~62606 standard therefore defines dedicated Arc Fault Detection Devices (AFDD). Designing such a device remains an open challenge: the arc signature varies strongly with the connected load, and a detector trained under laboratory conditions often fails to generalize to the diversity of domestic environments, while false alarms (nuisance tripping) must be kept close to zero.
+
+\medskip
+
+\noindent This final-year project, carried out at the Institut Jean Lamour (Université de Lorraine), addresses this challenge through a complete \emph{detection system} rather than a single classifier: since a real arc fault unfolds over several consecutive mains cycles --- and the standard allows a reaction time of several cycles --- the target architecture combines complementary detectors (an instantaneous single-cycle expert, a memory-based sequence model such as a state space model, and possibly a third expert) whose outputs are merged by a voting layer over an observation window of up to eight cycles. This report presents the design and validation of the system's first and most fundamental pillar: \emph{Arc-FaultNet}, a lightweight multimodal deep learning architecture that classifies each 50~Hz current cycle as normal or arcing. The line current, decimated to 102.4~kHz (2\,048 samples per cycle), is analyzed jointly by a 1-D temporal branch fed with four physics-informed channels (normalized current, first difference, Teager--Kaiser energy operator, sliding RMS) and a 2-D spectral branch operating on the STFT spectrogram. The two feature streams are fused by a bidirectional multi-head query--key--value cross-attention mechanism, complemented by squeeze-and-excitation blocks. A complete data engineering pipeline was built to train this model: cycle segmentation anchored on the mains voltage, automatic labeling using the arc voltage as a laboratory-only oracle, per-cycle normalization, and anti-aliased decimation.
+
+\medskip
+
+\noindent Following an iterative, diagnosis-driven methodology, the model evolved from a misleading 100\% (overfitted prototype) to an honest 89.6\%, then to 98.8\% accuracy (F1 = 98.7\%) on a held-out test set of 10\,860 labeled cycles, with about 315k parameters compatible with embedded deployment. A corrected component-wise ablation study quantifies the contribution of each design choice and shows that the dual-branch structure and the sequence-level cross-attention fusion are the main performance drivers. Recording-level cross-validation (GroupKFold) measures the generalization gap on fully unseen experimental conditions, and the forensic analysis of the residual errors confirms the relevance of the target system: the remaining ambiguities are physically unsolvable within a single cycle and call for the memory-based experts and the voting decision layer that constitute the next stages of this work.
+
+\vspace{0.5cm}
+
+\noindent\textbf{Keywords:} series arc fault, AFDD, IEC 62606, deep learning, dual-branch CNN, STFT, cross-attention, generalization, embedded systems.
+
+\vspace{0.4cm}
+\noindent\rule{\linewidth}{1pt}
+
+\newpage
+
+\begin{otherlanguage}{french}
+
+\section*{Résumé}
+\addcontentsline{toc}{section}{Résumé}
+
+\noindent\rule{\linewidth}{1pt}
+\vspace{0.3cm}
+
+\noindent Les défauts d'arc série constituent l'une des principales causes d'incendies électriques dans les installations domestiques. Le courant de défaut restant limité par la charge, ces arcs sont invisibles pour les disjoncteurs et les dispositifs différentiels classiques ; la norme IEC~62606 définit ainsi des dispositifs de détection dédiés (AFDD). La conception d'un tel dispositif reste un défi ouvert : la signature de l'arc varie fortement avec la charge connectée, un détecteur entraîné en laboratoire généralise mal à la diversité des environnements domestiques, et le taux de fausses alarmes (déclenchements intempestifs) doit rester quasi nul.
+
+\medskip
+
+\noindent Ce projet de fin d'études, réalisé à l'Institut Jean Lamour (Université de Lorraine), aborde ce défi par un véritable \emph{système de détection} plutôt que par un classifieur unique : un défaut d'arc réel se déploie sur plusieurs cycles consécutifs du réseau --- et la norme autorise un temps de réaction de plusieurs cycles --- de sorte que l'architecture cible combine des détecteurs complémentaires (un expert instantané mono-cycle, un modèle séquentiel à mémoire de type state space model, et éventuellement un troisième expert) dont les sorties sont fusionnées par une couche de vote sur une fenêtre d'observation pouvant atteindre huit cycles. Ce rapport présente la conception et la validation du premier pilier, le plus fondamental, de ce système : \emph{Arc-FaultNet}, une architecture multimodale légère d'apprentissage profond qui classe chaque cycle 50~Hz du courant comme normal ou avec arc. Le courant de ligne, décimé à 102,4~kHz (2\,048 points par cycle), est analysé conjointement par une branche temporelle 1-D alimentée par quatre canaux issus de la physique du phénomène (courant normalisé, dérivée première, opérateur d'énergie de Teager--Kaiser, RMS glissante) et par une branche spectrale 2-D opérant sur le spectrogramme STFT. Les deux flux de caractéristiques sont fusionnés par un mécanisme de cross-attention bidirectionnel multi-têtes de type requête--clé--valeur, complété par des blocs squeeze-and-excitation. Un pipeline complet d'ingénierie des données a été construit pour entraîner ce modèle : segmentation en cycles ancrée sur la tension du réseau, étiquetage automatique utilisant la tension d'arc comme oracle disponible uniquement en laboratoire, normalisation par cycle et décimation avec filtrage anti-repliement.
+
+\medskip
+
+\noindent Suivant une méthodologie itérative guidée par le diagnostic, le modèle a évolué d'un 100~\% trompeur (prototype en surapprentissage) vers un honnête 89,6~\%, puis vers 98,8~\% d'exactitude (F1 = 98,7~\%) sur un jeu de test indépendant de 10\,860 cycles étiquetés, avec environ 315k paramètres compatibles avec un déploiement embarqué. Une étude d'ablation corrigée quantifie la contribution de chaque choix de conception et montre que la structure bi-branche et la fusion par vraie cross-attention sont les principaux moteurs de la performance. Une validation croisée par enregistrement (GroupKFold) mesure l'écart de généralisation sur des conditions expérimentales totalement inconnues, et l'analyse forensique des erreurs résiduelles confirme la pertinence du système cible : les ambiguïtés restantes sont physiquement insolubles à l'échelle d'un seul cycle et appellent les experts à mémoire et la couche de décision par vote qui constituent les prochaines étapes de ce travail.
+
+\vspace{0.5cm}
+
+\noindent\textbf{Mots clés :} défaut d'arc série, AFDD, IEC 62606, apprentissage profond, CNN bi-branche, STFT, cross-attention, généralisation, systèmes embarqués.
+
+\vspace{0.4cm}
+\noindent\rule{\linewidth}{1pt}
+
+\end{otherlanguage}

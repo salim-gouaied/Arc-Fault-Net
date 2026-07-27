@@ -1,0 +1,81 @@
+% Fond de page (activé uniquement si l'image existe dans figures/)
+\IfFileExists{figures/background.png}{%
+\backgroundsetup{
+scale=1,
+color=black,
+opacity=1,
+angle=0,
+contents={%
+  \includegraphics[width=\paperwidth,height=\paperheight]{figures/background.png}
+  }%
+}
+}{}
+
+\begin{titlepage}
+\IfFileExists{figures/background.png}{\BgThispage}{}
+\thispagestyle{empty}
+
+% Logos
+\IfFileExists{figures/logoUTM.png}{%
+\begin{textblock}{2}[0.5,0.5](0.5,0.5)
+    \includegraphics[width=2.8cm]{figures/logoUTM.png}
+\end{textblock}
+}{}
+
+\IfFileExists{figures/logoEnit.png}{%
+\begin{textblock}{2}[0.5,0.5](9.7,0.15)
+    \includegraphics[width=2.5cm]{figures/logoEnit.png}
+\end{textblock}
+}{}
+
+\vspace*{1.6cm}
+
+\begin{center}
+{\normalsize University of Tunis El Manar\\[0.1cm]
+\textbf{\normalsize National Engineering School of Tunis}\\[0.1cm]
+\small Department of Information and Communication Technologies}
+
+\vspace{0.7cm}
+
+{\large \textbf{Graduation Project Report}}\\[0.4cm]
+
+{\emph{Presented by:}}\\[0.15cm]
+{\normalsize \textbf{Salim GOUAIED}}\\[0.3cm]
+
+{\emph{To obtain the:}}\\[0.15cm]
+{\normalsize \textbf{National Engineering Degree in Computer Science}}
+
+\vspace{0.4cm}
+
+\rule{\linewidth}{0.5mm}\\[0.15cm]
+{\Large \bfseries Design of a Generalizable Multimodal Deep Learning System for Series Arc Fault Detection in Residential Electrical Installations\\[0.1cm]}
+\rule{\linewidth}{0.5mm}\\[0.35cm]
+
+{\emph{Host laboratory:}}\\[0.1cm]
+\IfFileExists{figures/logoIJL.png}{%
+\includegraphics[height=1.3cm]{figures/logoIJL.png}\\[0.1cm]
+}{}
+{\normalsize \textbf{Institut Jean Lamour --- Université de Lorraine}}
+\end{center}
+
+\vspace{0.1cm}
+
+\noindent
+{\emph{Defense date:}} {\textbf{September 2026}}\\[0.01cm]
+
+{\emph{Jury members:}}\\[0.1cm]
+
+\renewcommand{\arraystretch}{0.86}
+\begin{tabular}{@{}ll@{}}
+President: & \textbf{Mr. Wady NANAA} \\
+Reviewer: & \textbf{Mrs. Wafa MEFTEH} \\
+Laboratory supervisor: & \textbf{Mr. Patrick SCHWEITZER} \\
+ENIT supervisor: & \textbf{Mrs. Mariem ZAOUALI} \\
+\end{tabular}
+\begin{center}
+Academic year: 2025--2026
+\end{center}
+
+\vfill
+
+\end{titlepage}

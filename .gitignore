@@ -95,3 +95,5 @@ tensorboard_logs/
 # ── Fichiers temporaires ──────────────────────────────────
 *.tmp
 
+combined_dataset_2048/**/*.npy
+combined_dataset_2048/**/*.csv

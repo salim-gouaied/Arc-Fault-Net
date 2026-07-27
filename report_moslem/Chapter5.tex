@@ -1,0 +1,465 @@
+
+\chapter{Réalisation}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Dans ce chapitre, nous présentons la partie visible et exploitable de la solution réalisée. Les aspects liés à l'analyse, au découpage, aux agents, aux routes, aux composants et à la configuration technique ayant déjà été détaillés dans les chapitres précédents, cette partie se concentre sur l'interface graphique du migrateur, le parcours utilisateur, les résultats affichés, le projet généré dans le dossier \texttt{output}, son lancement et la documentation produite.
+
+L'objectif est de montrer le migrateur comme un outil utilisable : l'utilisateur choisit son projet source, configure la sortie, lance l'exécution, suit l'avancement, consulte les résultats, récupère le projet généré et vérifie l'application produite.
+
+\section{Interface graphique du migrateur}
+
+Dans cette section, nous présentons l'interface graphique du migrateur. Nous décrivons les écrans qui permettent de préparer la migration, de sélectionner le projet source, de configurer les paramètres de sortie et de lancer le processus dans un environnement guidé.
+
+Cette première partie décrit les écrans utilisés pour préparer la migration avant toute exécution. Elle sert d'introduction au parcours utilisateur présenté dans les captures suivantes.
+
+L'interface graphique constitue le point d'entrée principal du migrateur. Elle doit rester simple, lisible et orientée vers les actions essentielles : sélectionner un projet Angular existant, définir les paramètres de sortie, activer les points de revue nécessaires et lancer la migration.
+
+La première capture présente l'écran d'accueil du migrateur IA. Elle situe l'utilisateur au début du parcours et met en évidence l'accès principal aux fonctions de migration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth,height=0.4\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_01.png}
+\par\smallskip
+
+\caption{Écran d'accueil du migrateur IA}
+\label{fig:realisation-capture-01}
+\end{figure}
+
+La figure suivante donne une vue d'ensemble de l'interface de configuration. Elle montre comment les paramètres essentiels sont regroupés dans un seul espace afin de faciliter la préparation de la migration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth,height=0.4\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_02.png}
+\par\smallskip
+
+\caption{Vue globale de l'interface de configuration du migrateur}
+\label{fig:realisation-capture-02}
+\end{figure}
+
+Avant de lancer le traitement, l'utilisateur doit indiquer le chemin du projet Angular source. Cette étape garantit que le migrateur travaille sur le bon répertoire et prépare correctement les artefacts de sortie.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_03.png}
+\par\smallskip
+{\small\textit{Description : cette capture illustre la zone de sélection du chemin du projet Angular source avant le lancement de la migration.}}
+\caption{Sélection du chemin du projet source avant le lancement}
+\label{fig:realisation-capture-03}
+\end{figure}
+
+Cette capture illustre la configuration complète d'une migration à partir d'un chemin local. Elle montre que l'utilisateur peut définir la source, la destination et les options nécessaires avant l'exécution.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_04.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente une configuration complète de migration avec le chemin source, la destination et les options nécessaires avant l'exécution.}}
+\caption{Configuration d'une migration à partir d'un chemin local}
+\label{fig:realisation-capture-04}
+\end{figure}
+
+Ces écrans montrent que l'utilisateur peut renseigner un projet local ou charger une archive, choisir le dossier des artefacts, définir le nom du projet et sélectionner les étapes nécessitant une validation humaine. Cette organisation limite l'exposition des détails internes tout en gardant un contrôle suffisant sur l'exécution.
+
+Après la présentation des écrans de configuration, il est nécessaire de montrer comment l'utilisateur suit l'exécution du pipeline et intervient lors des validations manuelles.
+
+\section{Suivi de l'exécution et validation humaine}
+
+Dans cette section, nous présentons le suivi de l'exécution du pipeline et le mécanisme de validation humaine. Nous décrivons les écrans qui permettent à l'utilisateur de suivre les étapes, de valider certains points de contrôle et de récupérer les résultats produits.
+
+Cette partie présente la manière dont l'utilisateur suit l'avancement de la migration et intervient lors des étapes sensibles. Elle met en évidence le rôle de l'interface dans la supervision du pipeline.
+
+Une fois la migration lancée, l'interface affiche l'état d'avancement du pipeline. Les différentes étapes sont présentées avec leur statut afin de permettre à l'utilisateur de suivre la progression sans consulter directement les fichiers intermédiaires ou la console.
+
+Après la configuration, l'utilisateur lance la migration depuis l'interface. La capture met en évidence le passage de la phase de préparation à la phase d'exécution du pipeline.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_05.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre le déclenchement de la migration depuis l'interface après la configuration des paramètres nécessaires.}}
+\caption{Démarrage de l'exécution de la migration}
+\label{fig:realisation-capture-05}
+\end{figure}
+
+Le processus prévoit des points de contrôle lorsque certaines étapes nécessitent une validation humaine. Dans cet exemple, l'utilisateur est invité à vérifier les résultats de l'analyse des domaines avant de poursuivre.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_06.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente un point de contrôle manuel affiché après l'analyse des domaines, afin de permettre une vérification avant la suite du pipeline.}}
+\caption{Point de contrôle manuel après l'analyse des domaines}
+\label{fig:realisation-capture-06}
+\end{figure}
+
+Une fois le point de contrôle validé, l'exécution peut reprendre. Cette capture montre que l'interface garde une trace claire de la décision de l'utilisateur et de l'avancement du traitement.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_07.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre la validation du point de contrôle et la reprise de l'exécution du pipeline après la décision de l'utilisateur.}}
+\caption{Validation du point de contrôle et poursuite de l'exécution}
+\label{fig:realisation-capture-07}
+\end{figure}
+
+Le suivi du pipeline permet de visualiser l'état des différentes étapes de migration. L'utilisateur peut ainsi comprendre rapidement quelles tâches sont terminées, en cours ou en attente.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_08.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la liste des étapes du pipeline avec leurs statuts, ce qui facilite le suivi de la progression de la migration.}}
+\caption{Suivi des étapes du pipeline de migration}
+\label{fig:realisation-capture-08}
+\end{figure}
+
+Cette capture présente un pipeline dans lequel plusieurs étapes ont déjà été validées. Elle confirme que l'interface offre une lecture progressive du déroulement de la migration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_09.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre un pipeline avancé, avec plusieurs étapes déjà validées et une progression clairement visible.}}
+\caption{Pipeline de migration avec plusieurs étapes validées}
+\label{fig:realisation-capture-09}
+\end{figure}
+
+Un nouveau point de contrôle apparaît après la migration du routage. Cette validation est importante, car le routage conditionne l'accès aux pages et la cohérence de la navigation dans l'application générée.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_10.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente le point de contrôle manuel associé à la migration du routage, étape essentielle pour valider la navigation de l'application générée.}}
+\caption{Point de contrôle manuel après la migration du routage}
+\label{fig:realisation-capture-10}
+\end{figure}
+
+Lorsque le pipeline arrive à son terme, l'interface signale la fin de la migration. Cette étape indique que les principaux artefacts ont été générés et qu'ils peuvent être récupérés.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_11.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre la fin de la migration et confirme la génération des artefacts produits par le migrateur.}}
+\caption{Fin de migration avec génération des artefacts}
+\label{fig:realisation-capture-11}
+\end{figure}
+
+La dernière capture de cette partie montre les actions de téléchargement disponibles. Elle permet à l'utilisateur de récupérer le workspace migré ainsi que le rapport produit par le migrateur.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_12.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente les options de téléchargement du workspace migré et du rapport de migration généré.}}
+\caption{Téléchargement du workspace migré et du rapport de migration}
+\label{fig:realisation-capture-12}
+\end{figure}
+
+Les captures montrent également le mécanisme de validation humaine. Lorsqu'une étape critique est atteinte, l'exécution peut être mise en pause afin de permettre à l'utilisateur de valider le résultat, d'ajouter un commentaire ou de relancer l'étape avec une instruction complémentaire. Ce fonctionnement améliore la maîtrise du processus et sécurise les phases sensibles de la migration.
+
+Une fois l'exécution terminée et les artefacts disponibles, la partie suivante décrit la récupération concrète du projet produit par le migrateur.
+
+\section{Récupération du projet généré}
+
+Dans cette section, nous présentons la récupération du projet généré après la migration. Nous décrivons l'extraction du workspace, l'ouverture du dossier produit et l'inspection du projet dans un environnement de développement.
+
+Cette partie montre comment le résultat produit par le migrateur est récupéré et ouvert dans un environnement de travail. Elle fait le lien entre la fin de l'exécution et l'exploitation du projet généré.
+
+À la fin de l'exécution, le migrateur met à disposition les artefacts produits : le workspace migré, le rapport de migration et les éléments nécessaires à la reprise du projet. L'utilisateur peut ensuite extraire l'archive générée, ouvrir le dossier obtenu et consulter la structure du projet dans son environnement de développement.
+
+Après le téléchargement, l'archive du workspace généré est extraite. Cette opération transforme le résultat de la migration en un dossier de projet exploitable localement.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_13.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre l'extraction de l'archive contenant le workspace généré afin d'obtenir un dossier exploitable localement.}}
+\caption{Extraction du workspace généré}
+\label{fig:realisation-capture-13}
+\end{figure}
+
+La capture suivante montre l'ouverture du dossier généré depuis l'explorateur de fichiers. Elle confirme que les artefacts sont accessibles et organisés sous forme de projet.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_14.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente l'ouverture du dossier généré depuis l'explorateur de fichiers après l'extraction du workspace.}}
+\caption{Ouverture du dossier généré depuis l'explorateur}
+\label{fig:realisation-capture-14}
+\end{figure}
+
+Le projet généré est ensuite ouvert dans Visual Studio Code. Cette étape permet de passer d'une simple archive produite par le migrateur à un environnement de travail prêt pour l'inspection du code.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_15.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre l'ouverture du projet généré dans Visual Studio Code pour inspecter le code et la structure produite.}}
+\caption{Ouverture du projet généré dans Visual Studio Code}
+\label{fig:realisation-capture-15}
+\end{figure}
+
+Cette vue du projet dans l'éditeur met en évidence sa structure après génération. Elle permet de vérifier la présence des fichiers et dossiers nécessaires au fonctionnement du nouveau workspace.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_16.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la structure du projet généré dans Visual Studio Code, avec les dossiers et fichiers créés par le migrateur.}}
+\caption{Projet généré affiché dans Visual Studio Code}
+\label{fig:realisation-capture-16}
+\end{figure}
+
+Ces captures matérialisent le passage entre l'exécution du migrateur et l'exploitation du résultat. Le dossier généré devient un livrable directement manipulable, prêt à être ouvert dans un éditeur de code pour poursuivre les vérifications ou les ajustements.
+
+Après la récupération du workspace, la vérification se poursuit par le lancement du projet généré dans un environnement de développement local.
+
+\section{Lancement du nouveau projet}
+
+Dans cette section, nous présentons le lancement du nouveau projet généré. Nous décrivons les commandes nécessaires, l'installation des dépendances, le démarrage du Shell, le lancement des applications distantes et la compilation du workspace.
+
+Cette partie explique les étapes nécessaires pour démarrer le workspace généré et vérifier son exécution. Elle complète la récupération du projet par une validation technique depuis le terminal.
+
+Le lancement du projet généré se fait depuis le dossier de sortie. L'utilisateur installe les dépendances, démarre le Shell puis lance les applications distantes générées. Cette étape permet de vérifier que la génération produit un projet exécutable et conforme à l'organisation attendue.
+
+\begin{verbatim}
+cd output
+npm install
+npm start
+\end{verbatim}
+
+Le lancement du projet commence depuis le terminal placé dans le dossier de sortie. Cette capture montre la commande utilisée pour démarrer le Shell généré.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_17.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre le terminal placé dans le dossier de sortie et la commande utilisée pour lancer le Shell généré.}}
+\caption{Lancement du Shell généré depuis le terminal}
+\label{fig:realisation-capture-17}
+\end{figure}
+
+Avant le démarrage complet, les dépendances du projet doivent être installées. La capture illustre cette étape indispensable pour préparer l'environnement d'exécution.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_18.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente l'installation des dépendances nécessaires au fonctionnement du projet généré.}}
+\caption{Installation des dépendances du projet généré}
+\label{fig:realisation-capture-18}
+\end{figure}
+
+Une fois les dépendances préparées, l'initialisation du projet peut commencer. Cette étape vérifie que les scripts de lancement sont disponibles et correctement configurés.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_19.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre l'initialisation du lancement du projet généré après la préparation des dépendances.}}
+\caption{Initialisation du lancement du projet généré}
+\label{fig:realisation-capture-19}
+\end{figure}
+
+La capture suivante montre le démarrage effectif du Shell. Le Shell joue le rôle de conteneur principal chargé d'orchestrer l'affichage des applications distantes.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_20.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre le démarrage du Shell généré, qui sert de conteneur principal pour les applications distantes.}}
+\caption{Démarrage du Shell généré}
+\label{fig:realisation-capture-20}
+\end{figure}
+
+Après le lancement du Shell, une application distante générée est démarrée. Cette capture vérifie que les différents modules peuvent être exécutés séparément dans l'architecture micro-frontend.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_21.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre le lancement d'une application Remote générée, exécutée séparément du Shell dans l'architecture micro-frontend.}}
+\caption{Lancement d'une application distante générée}
+\label{fig:realisation-capture-21}
+\end{figure}
+
+Cette figure montre le démarrage simultané des applications générées. Elle confirme que les parties du workspace peuvent fonctionner ensemble pendant la phase de validation.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_22.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente le démarrage des applications générées et montre leur exécution simultanée pendant la validation.}}
+\caption{Démarrage des applications générées}
+\label{fig:realisation-capture-22}
+\end{figure}
+
+La compilation permet de contrôler la cohérence technique du projet généré. Les messages affichés dans le terminal montrent que les sources sont construites par l'environnement Angular.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_23.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre la phase de construction et de compilation du projet généré dans l'environnement Angular.}}
+\caption{Construction et compilation du projet généré}
+\label{fig:realisation-capture-23}
+\end{figure}
+
+Cette capture présente la fin de la compilation des applications générées. Elle constitue un indicateur important de stabilité, car le projet peut être construit sans erreur bloquante.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_24.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la fin de la compilation des applications générées et confirme l'absence d'erreur bloquante visible.}}
+\caption{Fin de compilation des applications générées}
+\label{fig:realisation-capture-24}
+\end{figure}
+
+Les captures du terminal confirment l'exécution des commandes de lancement et la compilation des différentes parties du projet. Elles complètent les captures de l'interface en montrant que le livrable obtenu peut être démarré comme un projet Angular classique.
+
+Lorsque le Shell et les applications distantes sont démarrés, la validation peut être complétée par une observation directe des pages dans le navigateur.
+
+\section{Validation visuelle de l'application générée}
+
+Dans cette section, nous présentons la validation visuelle de l'application générée. Nous décrivons les principaux écrans obtenus dans le navigateur afin de vérifier la restitution des pages, des tableaux, des formulaires et des modules métier après la migration.
+
+Cette partie présente les écrans obtenus après le lancement du projet généré. Elle permet de vérifier que les pages principales restent consultables et cohérentes du point de vue utilisateur.
+
+Après le démarrage, l'application générée est consultable depuis le navigateur. Les écrans suivants illustrent les principales pages obtenues après migration : connexion, tableau de bord, gestion des clients, dossiers de crédit et création de questionnaires.
+
+Une fois le projet lancé, l'application peut être consultée dans le navigateur. La page de connexion constitue le premier écran visible et confirme l'accès à l'application migrée.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_25.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la page de connexion de l'application générée, premier écran visible après le lancement dans le navigateur.}}
+\caption{Page de connexion de l'application générée}
+\label{fig:realisation-capture-25}
+\end{figure}
+
+La liste des clients permet de vérifier l'affichage d'un module métier après migration. Cette capture montre que les données et les composants de présentation restent exploitables.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_26.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la liste des clients affichée dans l'application générée, avec les données métier et les composants associés.}}
+\caption{Liste des clients dans l'application générée}
+\label{fig:realisation-capture-26}
+\end{figure}
+
+Le tableau de bord donne une vision synthétique de l'application générée. Il permet de valider l'organisation visuelle des indicateurs et des éléments de navigation.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_27.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre le tableau de bord de l'application générée, avec les indicateurs et les éléments de navigation principaux.}}
+\caption{Tableau de bord de l'application générée}
+\label{fig:realisation-capture-27}
+\end{figure}
+
+Le formulaire de création d'un questionnaire illustre le fonctionnement des pages interactives. Il permet de vérifier que les champs, boutons et zones de saisie sont correctement restitués.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_28.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente le formulaire de création d'un questionnaire, avec ses champs de saisie et ses actions interactives.}}
+\caption{Formulaire de création d'un questionnaire}
+\label{fig:realisation-capture-28}
+\end{figure}
+
+La liste des dossiers de crédit représente un autre écran métier important. Cette capture confirme que les tableaux et les actions associées sont visibles après la migration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_29.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente la liste des dossiers de crédit et confirme l'affichage des données structurées après la migration.}}
+\caption{Liste des dossiers de crédit}
+\label{fig:realisation-capture-29}
+\end{figure}
+
+La vue détaillée des clients complète la validation du module de gestion des clients. Elle montre que l'application générée conserve une présentation exploitable des informations métier.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_30.png}
+\par\smallskip
+{\small\textit{Description : cette capture montre la vue détaillée des clients et permet de vérifier la restitution des informations métier dans l'application migrée.}}
+\caption{Liste détaillée des clients}
+\label{fig:realisation-capture-30}
+\end{figure}
+
+Le tableau des dossiers de crédit permet de contrôler la restitution d'un ensemble de données structuré. Cette capture renforce la validation fonctionnelle de l'application générée.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_31.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente le tableau des dossiers de crédit après migration, avec une restitution structurée des données.}}
+\caption{Tableau des dossiers de crédit après migration}
+\label{fig:realisation-capture-31}
+\end{figure}
+
+Enfin, le tableau de bord final résume le résultat visuel obtenu après migration. Il sert de preuve de fonctionnement global de l'application dans un navigateur.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth,height=0.68\textheight,keepaspectratio]{figures/captures_realisation/capture_realisation_32.png}
+\par\smallskip
+{\small\textit{Description : cette capture présente le tableau de bord final de l'application générée et illustre le résultat visuel global obtenu après migration.}}
+\caption{Tableau de bord final de l'application générée}
+\label{fig:realisation-capture-32}
+\end{figure}
+
+Cette validation visuelle confirme que les modules générés peuvent être affichés et manipulés dans le navigateur. Elle constitue une preuve concrète de la réalisation, car elle montre le résultat final tel qu'il est perçu par l'utilisateur.
+
+Après la validation visuelle, il convient de synthétiser les éléments livrés à la fin de la réalisation afin de préciser le résultat concret obtenu.
+
+\section{Livrables finaux}
+
+Dans cette section, nous présentons les livrables finaux produits à l'issue de la réalisation. Nous identifions les éléments fournis à l'utilisateur, notamment l'interface graphique, le dossier \texttt{output}, les rapports, la documentation et les captures d'écran.
+
+Cette dernière partie regroupe les éléments produits à l'issue de la réalisation. Elle permet d'identifier clairement ce qui est fourni à l'utilisateur après l'exécution du migrateur.
+
+À la fin de l'exécution, les livrables attendus sont le projet généré dans \texttt{output}, les rapports produits par le migrateur, la documentation associée et les captures des principaux écrans de l'interface. Ces éléments constituent la preuve concrète de la réalisation.
+
+\begingroup
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{|p{4.2cm}|p{9.6cm}|}
+\caption{Livrables de la réalisation}\label{tab:livrables-realisation}\\
+\hline
+\textbf{Livrable} & \textbf{Rôle dans la réalisation} \\
+\hline
+Interface graphique & Permettre à l'utilisateur de configurer, lancer et suivre la génération. \\
+\hline
+Dossier \texttt{output} & Contenir le nouveau projet généré et prêt à être ouvert. \\
+\hline
+Rapports & Donner un retour sur l'exécution et les résultats obtenus. \\
+\hline
+Documentation & Expliquer comment exploiter le projet généré après la migration. \\
+\hline
+Captures d'écran & Illustrer le fonctionnement réel du migrateur et du projet généré. \\
+\hline
+\end{longtable}
+\endgroup
+
+Le tableau permet de relier chaque livrable à son rôle dans la solution finale. Il clarifie ainsi la valeur de chaque élément produit, depuis l'interface de migration jusqu'aux captures utilisées pour documenter le résultat obtenu.
+
+Cette synthèse des livrables termine la description de la réalisation et permet de conclure sur l'apport concret de la solution développée.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Dans cette conclusion, nous récapitulons la réalisation visible du migrateur. Ce chapitre a présenté l'interface graphique, le suivi de l'exécution, l'affichage des résultats, la récupération du dossier \texttt{output}, le lancement du projet généré et la validation visuelle de l'application obtenue. Il complète les chapitres précédents sans reprendre les détails techniques de la migration, en montrant plutôt comment la solution se présente à l'utilisateur final et quels livrables elle fournit.
+

@@ -1,0 +1,354 @@
+
+\chapter{Release 2 : Migration détaillée et intégration finale}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Dans ce chapitre, nous présentons la deuxième release du projet. Nous présentons la continuité avec la Release 1, qui a permis de préparer le pipeline, de produire le plan directeur de migration et de générer la structure initiale de l'architecture micro-frontend. Cette deuxième release se concentre sur la migration détaillée du code applicatif, l'intégration finale entre le Shell et les applications Remote, la validation technique du livrable et la stabilisation de la solution.
+
+L'objectif principal de cette release est de passer d'une structure micro-frontend générée à un projet Angular exploitable. Pour cela, elle couvre la migration des services, de la gestion d'état, des éléments partagés, des routes, des composants, des templates et des styles. Elle se termine par la configuration de Module Federation, la validation finale, la documentation et la livraison du projet.
+
+\section{Planification de la Release 2}
+
+Dans cette section, nous présentons la planification de la Release 2. Nous détaillons les trois sprints qui la composent, leurs objectifs, les user stories associées ainsi que les livrables attendus à la fin de chaque sprint.
+
+La Release 2 est organisée en trois sprints complémentaires, comme le montre le tableau~\ref{tab:planning-release2}. Ces sprints reprennent les couches de migration détaillée et d'intégration finale définies dans le backlog produit.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.8cm}|p{3.8cm}|p{2.7cm}|p{4.25cm}|}
+\caption{Planification de la Release 2}\label{tab:planning-release2}\\
+\hline
+\textbf{Sprint} & \textbf{Objectif} & \textbf{User stories} & \textbf{Livrables attendus} \\
+\hline
+Sprint 4 & Migration des services, de la gestion d'état et des éléments partagés & US09, US12 & Services migrés, éléments mutualisés, état applicatif conservé et validations associées \\
+\hline
+Sprint 5 & Migration des routes, des composants, des templates et des styles & US10, US11, US13, US14 & Composants migrés, routes intégrées, styles repris et intégration backend validée \\
+\hline
+Sprint 6 & Configuration Module Federation, validation finale, documentation et stabilisation & US15, US16, US17, US18 & Shell et Remotes connectés, build validé, documentation produite et projet livrable stabilisé \\
+\hline
+\end{longtable}
+\endgroup
+
+\section{Sprint 4 : Migration des services, de la gestion d'état et des éléments partagés}
+
+Dans cette section, nous présentons le Sprint 4 de la Release 2. Nous décrivons son objectif, son analyse, sa conception et sa validation, en mettant l'accent sur la migration des services, de la gestion d'état et des éléments partagés.
+
+\subsection{Objectif du Sprint 4}
+
+Le Sprint 4 marque le début de la migration détaillée du code applicatif. Après la génération de la structure cible durant le Sprint 3, l'objectif est de transférer les éléments transverses du projet Angular source vers l'architecture micro-frontend générée. Ces éléments comprennent principalement les services Angular, les modèles partagés, les interfaces, les utilitaires, les guards, les interceptors et les mécanismes de gestion d'état.
+
+Ce sprint est essentiel car les services et les éléments partagés constituent souvent la base technique utilisée par les composants. Une mauvaise migration de cette couche peut entraîner des erreurs en cascade dans les sprints suivants, notamment lors de la migration des composants et des routes.
+
+Le tableau~\ref{tab:backlog-sprint4-release2} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.1cm}|p{6.55cm}|p{1.55cm}|}
+\caption{Backlog du Sprint 4}\label{tab:backlog-sprint4-release2}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US09 & Migration des éléments partagés & Migrer les interfaces, modèles, constantes, pipes, directives, guards, interceptors et utilitaires afin de les rendre réutilisables entre le Shell et les Remotes. & Élevée \\
+\hline
+US12 & Migration des services et de l'état & Migrer les services Angular et les mécanismes de gestion d'état afin de préserver la logique applicative et les échanges de données du projet initial. & Élevée \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 4}
+
+Le Sprint 4 intervient après la création de l'environnement de travail, du Shell et des Remotes. Le système dispose donc d'une arborescence cible, mais celle-ci ne contient pas encore la logique applicative issue du monolithe. Le besoin principal de ce sprint est de déplacer les éléments transverses dans les emplacements appropriés tout en conservant leurs dépendances.
+
+La migration des services nécessite d'identifier leur périmètre d'utilisation. Un service utilisé par plusieurs domaines doit être placé dans une librairie partagée ou dans un espace commun accessible par les applications concernées. À l'inverse, un service propre à un domaine fonctionnel peut être migré dans la Remote correspondante. Cette décision permet de limiter les dépendances inutiles entre micro-frontends.
+
+La gestion d'état demande également une attention particulière. Lorsque l'application source utilise des services de stockage, des observables partagés ou une librairie d'état, le pipeline doit conserver la cohérence des flux de données. L'objectif n'est pas uniquement de copier les fichiers, mais de préserver le comportement fonctionnel du projet initial dans un contexte distribué.
+
+\subsection{Conception du Sprint 4}
+
+La conception du Sprint 4 repose sur deux traitements complémentaires. Le premier concerne la migration des éléments partagés. Il analyse les artefacts identifiés dans le rapport d'extraction structurelle, détermine leur niveau de mutualisation et les place dans la structure cible. Le second concerne la migration des services et de la gestion d'état. Il identifie les dépendances, adapte les imports et vérifie que les services restent accessibles depuis les composants et les modules qui les consomment.
+
+Le processus de migration suit une logique progressive. Les éléments partagés sont traités en premier afin que les services puissent s'appuyer sur des modèles, types ou utilitaires déjà disponibles. Ensuite, les services sont migrés selon leur domaine d'appartenance. Enfin, une validation des imports et des dépendances permet de détecter les chemins cassés ou les fichiers manquants.
+
+
+
+\subsubsection{Diagramme d'activité du Sprint 4}
+
+La figure~\ref{fig:activite-sprint4-release2} détaille le déroulement de la migration des éléments transverses. Le flux commence par l'analyse des artefacts source, puis enchaîne la classification, la migration, l'adaptation des imports et la validation.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.5\textwidth}{!}{%
+\begin{tikzpicture}[font=\small, node distance=1.05cm, >=Latex,
+startend/.style={circle, draw, fill=black, minimum size=4.5mm, inner sep=0pt},
+final/.style={circle, draw, double, fill=black, minimum size=4.5mm, inner sep=0pt},
+activity/.style={rectangle, rounded corners, draw, align=center, text width=5.0cm, minimum height=8mm},
+decision/.style={diamond, draw, aspect=2.2, align=center, text width=2.6cm, inner sep=1pt}]
+\node[startend] (start) {};
+\node[activity, below=of start] (a1) {Lire l'inventaire structurel du monolithe};
+\node[activity, below=of a1] (a2) {Classer les éléments : partagés ou propres à une Remote};
+\node[activity, below=of a2] (a3) {Migrer interfaces, modèles, utilitaires, guards et interceptors};
+\node[activity, below=of a3] (a4) {Migrer les services Angular et les mécanismes d'état};
+\node[activity, below=of a4] (a5) {Réécrire les imports et vérifier les dépendances};
+\node[decision, below=1.25cm of a5] (d1) {Imports valides ?};
+\node[activity, right=2.9cm of d1] (fix) {Corriger les chemins et compléter les fichiers manquants};
+\node[activity, below=1.25cm of d1] (a6) {Enregistrer le rapport de validation du Sprint 4};
+\node[final, below=of a6] (end) {};
+\draw[->] (start) -- (a1);
+\draw[->] (a1) -- (a2);
+\draw[->] (a2) -- (a3);
+\draw[->] (a3) -- (a4);
+\draw[->] (a4) -- (a5);
+\draw[->] (a5) -- (d1);
+\draw[->] (d1) -- node[left]{Oui} (a6);
+\draw[->] (a6) -- (end);
+\draw[->] (d1) -- node[above]{Non} (fix);
+\draw[->] (fix.north) |- (a4.east);
+\end{tikzpicture}%
+}
+\caption{Diagramme d'activité du Sprint 4}
+\label{fig:activite-sprint4-release2}
+\end{figure}
+
+\subsubsection{Migration des éléments partagés}
+
+La migration des éléments partagés consiste à transférer les ressources communes vers un espace cible cohérent. Les interfaces, modèles, constantes et utilitaires sont regroupés dans une librairie partagée lorsque leur usage dépasse un seul domaine fonctionnel. Les éléments propres à une Remote restent dans le périmètre de cette Remote afin d'éviter une mutualisation excessive.
+
+Cette étape permet d'améliorer la maintenabilité de l'architecture cible. Elle évite la duplication des éléments communs et facilite leur évolution. Elle prépare également la migration des composants, car ceux-ci dépendent souvent de types, de pipes ou de directives déjà présents dans le projet source.
+
+\subsubsection{Migration des services et de la gestion d'état}
+
+La migration des services Angular vise à conserver la logique applicative du monolithe. Les services sont analysés selon leurs dépendances, leurs appels backend, leur injection dans les composants et leur rôle fonctionnel. Les services transverses sont placés dans une zone partagée, tandis que les services spécifiques sont rattachés à leur Remote.
+
+Pour la gestion d'état, l'objectif est de préserver les mécanismes de partage d'information entre les différentes parties de l'application. Lorsque l'état est local à un domaine, il peut être conservé dans la Remote concernée. Lorsqu'il est global, il doit être exposé de manière contrôlée afin que le Shell et les Remotes puissent l'utiliser sans créer un couplage trop fort.
+
+\subsection{Validation du Sprint 4}
+
+La validation du Sprint 4 porte principalement sur la cohérence des fichiers migrés et sur la résolution des dépendances. Le validateur vérifie la présence des éléments déplacés, la validité des imports, l'absence de fichiers dupliqués inutilement et la cohérence entre le plan directeur de migration et le résultat produit.
+
+Cette validation permet de sécuriser la suite du projet. Les composants et les routes migrés au Sprint 5 pourront s'appuyer sur des services et des éléments partagés déjà disponibles, ce qui réduit le risque d'erreurs lors de l'intégration.
+
+\section{Sprint 5 : Migration des routes, des composants, des templates et des styles}
+
+Dans cette section, nous présentons le Sprint 5 de la Release 2. Nous décrivons son objectif, son analyse, sa conception et sa validation, en mettant l'accent sur la migration des routes, des composants, des templates, des styles et de l'intégration backend.
+
+\subsection{Objectif du Sprint 5}
+
+Le Sprint 5 a pour objectif de migrer la partie visible et fonctionnelle de l'application Angular source. Il concerne les routes, les composants, les templates HTML, les fichiers de style et l'intégration avec le backend. À ce stade, la structure cible existe et les éléments transverses ont été préparés durant le Sprint 4. Le pipeline peut donc migrer les écrans et les parcours applicatifs dans les Remotes concernées.
+
+Ce sprint permet de transformer les squelettes Remote en applications fonctionnelles contenant des composants réels, des routes exploitables et une interface cohérente avec le projet initial.
+
+Le tableau~\ref{tab:backlog-sprint5-release2} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.1cm}|p{6.55cm}|p{1.55cm}|}
+\caption{Backlog du Sprint 5}\label{tab:backlog-sprint5-release2}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US10 & Migration des composants & Migrer les composants Angular, les templates HTML et les styles afin de préserver le rendu visuel et le comportement de l'application source. & Élevée \\
+\hline
+US11 & Validation des composants & Contrôler les composants migrés afin de détecter les erreurs d'import, les dépendances manquantes ou les incohérences d'intégration. & Moyenne \\
+\hline
+US13 & Migration des routes & Migrer les routes Angular afin d'assurer la navigation entre le Shell, les Remotes et les fonctionnalités internes de chaque domaine. & Élevée \\
+\hline
+US14 & Validation de l'intégration backend & Vérifier que le projet micro-frontend généré consomme correctement les mêmes API que le monolithe Angular source. & Moyenne \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 5}
+
+Le Sprint 5 représente une étape sensible, car il touche directement aux fonctionnalités perçues par l'utilisateur final. Les composants Angular combinent souvent plusieurs dépendances : services, modèles, routes, templates, styles, pipes et directives. Leur migration doit donc être réalisée en tenant compte de l'ensemble de ces éléments.
+
+La migration des routes doit respecter le découpage fonctionnel défini dans le plan directeur. Les routes globales sont rattachées au Shell, tandis que les routes propres à un domaine sont intégrées dans la Remote correspondante. Cette séparation garantit que chaque micro-frontend conserve une responsabilité claire et que la navigation globale reste contrôlée par le Shell.
+
+L'intégration backend constitue un autre point de contrôle important. Les composants et services migrés doivent continuer à utiliser les endpoints existants, les paramètres attendus et les mécanismes d'authentification ou d'interception HTTP. La validation de cette intégration permet de vérifier que la migration frontend ne rompt pas les échanges avec le backend.
+
+\subsection{Conception du Sprint 5}
+
+La conception du Sprint 5 repose sur une chaîne de migration orientée dépendances. Les routes sont d'abord analysées pour déterminer le domaine de chaque parcours. Les composants associés sont ensuite déplacés vers les Remotes correspondantes. Les templates et les styles sont migrés avec leurs composants afin de préserver la cohérence visuelle. Enfin, les imports sont recalculés pour tenir compte des nouveaux chemins.
+
+Cette étape utilise les informations produites lors des sprints précédents : le rapport d'extraction structurelle, le plan directeur de migration, la structure générée et les éléments partagés migrés. Cette combinaison d'artefacts permet de prendre des décisions plus fiables que la simple copie de fichiers.
+
+\subsubsection{Migration des routes}
+
+La migration des routes consiste à séparer la navigation globale de la navigation locale. Le Shell conserve les routes de haut niveau permettant de charger les Remotes. Chaque Remote contient ensuite ses propres routes internes, correspondant aux fonctionnalités du domaine qu'elle porte.
+
+Cette organisation améliore l'autonomie des Remotes. Elle permet à chaque micro-frontend d'évoluer localement sans modifier systématiquement la configuration du Shell. Elle facilite aussi le chargement paresseux des fonctionnalités, ce qui correspond à l'esprit d'une architecture micro-frontend.
+
+\subsubsection{Migration des composants, templates et styles}
+
+La migration des composants consiste à déplacer les fichiers TypeScript, HTML et CSS ou SCSS vers la Remote adaptée. Les dépendances utilisées par chaque composant sont analysées pour adapter les chemins d'import et vérifier que les services nécessaires sont disponibles.
+
+Les templates et les styles sont conservés avec leurs composants afin de préserver le rendu de l'application source. Lorsque des styles sont globaux, ils peuvent être déplacés vers un emplacement partagé ou déclarés dans la configuration du Shell selon leur portée réelle. Cette distinction évite de rendre chaque Remote dépendante d'un style global non maîtrisé.
+
+\subsubsection{Validation de l'intégration backend}
+
+La validation de l'intégration backend vérifie que les appels HTTP et les configurations associées restent cohérents après la migration. Les services qui consomment des API doivent conserver les mêmes endpoints ou être adaptés lorsque la structure cible impose une configuration différente.
+
+Cette validation porte également sur les interceptors, les tokens, les paramètres d'environnement et les mécanismes d'authentification. Elle permet de s'assurer que les fonctionnalités migrées ne se limitent pas à une compilation correcte, mais restent connectées aux services backend nécessaires.
+
+\subsection{Validation du Sprint 5}
+
+La validation du Sprint 5 combine plusieurs contrôles. Le premier porte sur les routes afin de vérifier que chaque parcours est présent dans le bon niveau de l'architecture. Le deuxième concerne les composants et leurs dépendances. Le troisième contrôle l'intégration backend et la présence des configurations nécessaires.
+
+À la fin de ce sprint, les principales fonctionnalités du monolithe doivent être représentées dans l'architecture micro-frontend. Les Remotes ne sont plus de simples squelettes : elles contiennent des écrans, des routes, des styles et une partie significative de la logique applicative.
+
+
+\subsubsection{Diagramme d'activité du Sprint 5}
+
+La figure~\ref{fig:activite-sprint5-release2} illustre l'enchaînement des opérations permettant de transformer les Remotes générées en applications fonctionnelles. Le processus accorde une place spécifique à la validation de l'intégration backend afin d'éviter une migration uniquement structurelle.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.78\textwidth}{!}{%
+\begin{tikzpicture}[font=\small, node distance=1.05cm, >=Latex,
+startend/.style={circle, draw, fill=black, minimum size=4.5mm, inner sep=0pt},
+final/.style={circle, draw, double, fill=black, minimum size=4.5mm, inner sep=0pt},
+activity/.style={rectangle, rounded corners, draw, align=center, text width=5.0cm, minimum height=8mm},
+decision/.style={diamond, draw, aspect=2.2, align=center, text width=2.6cm, inner sep=1pt}]
+\node[startend] (start) {};
+\node[activity, below=of start] (a1) {Charger le plan de migration et les domaines Remote};
+\node[activity, below=of a1] (a2) {Migrer les routes globales et locales};
+\node[activity, below=of a2] (a3) {Migrer les composants, templates HTML et styles};
+\node[activity, below=of a3] (a4) {Adapter les imports vers les services et éléments partagés};
+\node[activity, below=of a4] (a5) {Vérifier les appels API et la configuration backend};
+\node[decision, below=1.25cm of a5] (d1) {Composants et backend valides ?};
+\node[activity, right=2.9cm of d1] (fix) {Corriger routes, dépendances ou endpoints};
+\node[activity, below=1.25cm of d1] (a6) {Générer le rapport de validation du Sprint 5};
+\node[final, below=of a6] (end) {};
+\draw[->] (start) -- (a1);
+\draw[->] (a1) -- (a2);
+\draw[->] (a2) -- (a3);
+\draw[->] (a3) -- (a4);
+\draw[->] (a4) -- (a5);
+\draw[->] (a5) -- (d1);
+\draw[->] (d1) -- node[left]{Oui} (a6);
+\draw[->] (a6) -- (end);
+\draw[->] (d1) -- node[above]{Non} (fix);
+\draw[->] (fix.north) |- (a4.east);
+\end{tikzpicture}%
+}
+\caption{Diagramme d'activité du Sprint 5}
+\label{fig:activite-sprint5-release2}
+\end{figure}
+
+\section{Sprint 6 : Configuration Module Federation, validation finale, documentation et stabilisation}
+
+Dans cette section, nous présentons le Sprint 6 de la Release 2. Nous décrivons son objectif, son analyse, sa conception et sa validation, en mettant l'accent sur la configuration de Module Federation, la validation finale, la documentation, la livraison et la stabilisation du projet.
+
+\subsection{Objectif du Sprint 6}
+
+Le Sprint 6 constitue la phase d'intégration finale de la Release 2. Il vise à connecter dynamiquement le Shell et les Remotes grâce à Module Federation, à valider le build du projet généré, à produire la documentation de migration et à stabiliser le livrable final.
+
+Ce sprint clôture le processus de migration. Il ne se limite pas à une configuration technique : il doit également garantir que le résultat obtenu est compréhensible, exécutable et exploitable par un développeur chargé de poursuivre la maintenance du projet.
+
+Le tableau~\ref{tab:backlog-sprint6-release2} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.1cm}|p{6.55cm}|p{1.55cm}|}
+\caption{Backlog du Sprint 6}\label{tab:backlog-sprint6-release2}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US15 & Configuration Module Federation & Configurer Webpack Module Federation afin de connecter dynamiquement le Shell et les applications Remote. & Élevée \\
+\hline
+US16 & Validation finale & Valider le build, la fédération et la cohérence globale du projet généré. & Élevée \\
+\hline
+US17 & Documentation de migration & Générer une documentation décrivant l'architecture cible, les fichiers migrés, les choix effectués et les validations réalisées. & Moyenne \\
+\hline
+US18 & Livraison et stabilisation & Fournir un projet Angular micro-frontend fonctionnel, validé, documenté et prêt à être repris par une équipe de développement. & Élevée \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 6}
+
+Le Sprint 6 intervient lorsque les éléments applicatifs principaux ont été migrés. Le besoin principal est alors de rendre l'architecture exécutable dans son ensemble. Le Shell doit pouvoir charger les Remotes, les dépendances partagées doivent être correctement déclarées et les configurations doivent rester cohérentes avec les versions utilisées par le projet Angular.
+
+La validation finale représente un jalon important. Un projet généré peut contenir les bons fichiers sans être réellement exploitable si le build échoue, si une Remote n'est pas exposée correctement ou si une dépendance partagée est déclarée de manière incohérente. Le Sprint 6 permet donc de transformer une migration structurelle et fonctionnelle en livrable stabilisé.
+
+\subsection{Conception du Sprint 6}
+
+La conception du Sprint 6 repose sur trois axes. Le premier concerne la configuration de Module Federation : déclaration des Remotes dans le Shell, exposition des modules distants, partage des dépendances et cohérence des ports. Le deuxième concerne la validation finale : contrôle de la structure, validation des imports, vérification de la fédération et exécution du build. Le troisième concerne la documentation et la livraison : génération des rapports, description de l'architecture cible et préparation du projet final.
+
+Cette organisation permet de traiter l'intégration finale comme une étape contrôlée plutôt que comme une simple opération de configuration. Chaque résultat produit doit pouvoir être vérifié et documenté.
+
+
+
+\subsubsection{Diagramme d'activité du Sprint 6}
+
+La figure~\ref{fig:activite-sprint6-release2} décrit la phase finale d'intégration. Le flux met en évidence la boucle de correction déclenchée lorsque le build ou la fédération ne sont pas valides.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.6\textwidth}{!}{%
+\begin{tikzpicture}[font=\small, node distance=1.05cm, >=Latex,
+startend/.style={circle, draw, fill=black, minimum size=4.5mm, inner sep=0pt},
+final/.style={circle, draw, double, fill=black, minimum size=4.5mm, inner sep=0pt},
+activity/.style={rectangle, rounded corners, draw, align=center, text width=5.0cm, minimum height=8mm},
+decision/.style={diamond, draw, aspect=2.2, align=center, text width=2.6cm, inner sep=1pt}]
+\node[startend] (start) {};
+\node[activity, below=of start] (a1) {Déclarer les Remotes dans le Shell};
+\node[activity, below=of a1] (a2) {Exposer les modules et routes côté Remote};
+\node[activity, below=of a2] (a3) {Configurer les dépendances partagées};
+\node[activity, below=of a3] (a4) {Lancer la validation finale et le build};
+\node[activity, below=of a4] (a5) {Analyser les rapports de fédération et de compilation};
+\node[decision, below=1.25cm of a5] (d1) {Build et fédération valides ?};
+\node[activity, right=2.9cm of d1] (fix) {Corriger la configuration de fédération ou les versions};
+\node[activity, below=1.25cm of d1] (a6) {Générer la documentation et préparer la livraison};
+\node[final, below=of a6] (end) {};
+\draw[->] (start) -- (a1);
+\draw[->] (a1) -- (a2);
+\draw[->] (a2) -- (a3);
+\draw[->] (a3) -- (a4);
+\draw[->] (a4) -- (a5);
+\draw[->] (a5) -- (d1);
+\draw[->] (d1) -- node[left]{Oui} (a6);
+\draw[->] (a6) -- (end);
+\draw[->] (d1) -- node[above]{Non} (fix);
+\draw[->] (fix.north) |- (a4.east);
+\end{tikzpicture}%
+}
+\caption{Diagramme d'activité du Sprint 6}
+\label{fig:activite-sprint6-release2}
+\end{figure}
+
+\subsubsection{Configuration de Module Federation}
+
+La configuration de Module Federation permet au Shell de charger dynamiquement les Remotes. Chaque Remote expose un module ou une configuration de routes, tandis que le Shell déclare les points d'entrée distants nécessaires. Les dépendances communes, comme Angular, RxJS ou certaines librairies partagées, doivent être déclarées de manière cohérente afin d'éviter les duplications et les conflits de version.
+
+Cette étape est centrale dans une architecture micro-frontend. Elle matérialise la séparation entre le conteneur applicatif et les fonctionnalités distribuées. Elle permet également de faire évoluer les Remotes avec davantage d'autonomie, tout en conservant une navigation globale contrôlée.
+
+\subsubsection{Validation finale}
+
+La validation finale regroupe l'ensemble des contrôles nécessaires avant la livraison. Elle vérifie la présence des fichiers attendus, la validité des imports, la cohérence des routes, la déclaration des Remotes, l'exposition des modules et la réussite du build.
+
+Lorsque des erreurs sont détectées, le pipeline doit produire un rapport exploitable indiquant le fichier concerné, la nature de l'erreur et, lorsque c'est possible, la correction recommandée. Cette approche facilite la stabilisation et évite que les problèmes soient découverts uniquement lors de l'exécution manuelle du projet.
+
+\subsubsection{Documentation, livraison et stabilisation}
+
+La documentation de migration constitue un livrable important. Elle explique les transformations réalisées, les choix de découpage, les fichiers migrés, les éléments mutualisés, les Remotes générées, les routes configurées et les validations exécutées. Elle permet à une équipe de développement de comprendre le résultat obtenu sans devoir analyser tout le pipeline.
+
+La livraison consiste à fournir le projet Angular micro-frontend généré, accompagné de ses rapports de validation et de sa documentation. La stabilisation finale permet de corriger les incohérences restantes, de nettoyer les fichiers temporaires et de s'assurer que le projet livré peut être exécuté dans un environnement de développement standard.
+
+\subsection{Validation du Sprint 6}
+
+La validation du Sprint 6 se concentre sur l'exploitabilité du livrable. Le projet doit pouvoir être installé, construit et exécuté selon les instructions fournies. La configuration de Module Federation doit permettre au Shell de charger correctement les Remotes, et les rapports générés doivent documenter les décisions prises pendant la migration.
+
+À la fin de ce sprint, le projet obtenu doit être considéré comme une version stabilisée de l'architecture micro-frontend cible. Il représente le résultat final du pipeline de migration et prépare la phase d'évaluation globale de la solution.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Dans cette conclusion, nous récapitulons les principaux apports de la Release 2. Cette release a permis de compléter le passage d'une architecture générée à un livrable micro-frontend exploitable. Le Sprint 4 a traité la migration des services, de la gestion d'état et des éléments partagés. Le Sprint 5 a couvert la migration des routes, des composants, des templates et des styles, ainsi que la validation de l'intégration backend. Enfin, le Sprint 6 a assuré la configuration de Module Federation, la validation finale, la documentation, la livraison et la stabilisation du projet.
+
+Cette release constitue donc la phase de concrétisation du projet. Elle transforme les résultats préparatoires de la première release en une solution complète, validée et documentée. Le chapitre suivant présentera l'implémentation technique, les agents développés, les validateurs intégrés et les résultats obtenus.
+

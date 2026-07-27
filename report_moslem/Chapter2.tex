@@ -1,0 +1,524 @@
+
+\chapter{Analyse et planification}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Dans ce chapitre, nous présentons l'analyse et la planification du projet. Nous présentons d'abord les besoins fonctionnels et non fonctionnels de l'outil de migration, ainsi que les acteurs du système.
+
+Nous présentons ensuite l'étude architecturale de la solution proposée, puis l'organisation Scrum adoptée pour structurer le déroulement du projet.
+
+\section{Analyse des besoins}
+
+Dans cette section, nous présentons l'analyse des besoins du projet. Nous identifions les besoins fonctionnels, les besoins non fonctionnels ainsi que les acteurs qui interagissent avec l'outil de migration. Cette analyse constitue une étape essentielle pour définir clairement les attentes du système et les contraintes à respecter.
+
+\subsection{Besoins fonctionnels}
+\label{sec:besoins-fonctionnels}
+
+Les besoins fonctionnels décrivent les services que l'outil doit offrir. Ils couvrent les différentes étapes du processus, depuis l'importation du projet source jusqu'à la production du livrable final. Les principaux besoins fonctionnels identifiés pour l'outil de migration sont les suivants :
+
+\begin{itemize}
+    \item Le système doit permettre au développeur d'importer un projet Angular monolithique et de lancer le processus de migration.
+
+    \item Le système doit analyser automatiquement la structure du projet source afin d'identifier les composants, routes, services, dépendances et éléments partagés.
+
+    \item Le système doit orchestrer le workflow de migration afin de coordonner les différentes étapes, gérer l'état partagé du pipeline et déclencher les traitements dans un ordre contrôlé.
+
+    \item Le système doit proposer un découpage fonctionnel du projet monolithique afin de préparer l'architecture micro-frontend cible.
+
+    \item Le système doit générer une architecture Angular MFE composée d'un Shell et de plusieurs applications Remote.
+
+    \item Le système doit migrer les éléments principaux du frontend, notamment les composants, templates, styles, services, routes et dépendances partagées.
+
+    \item Le système doit configurer Module Federation afin d'assurer la communication entre le Shell et les micro-frontends.
+
+    \item Le système doit valider le projet généré afin de vérifier la cohérence de la structure MFE et la réussite du build.
+
+    \item Le système doit fournir au développeur le projet Angular MFE généré ainsi qu'une documentation de migration.
+\end{itemize}
+
+\subsection{Besoins non fonctionnels}
+
+Les besoins non fonctionnels ne concernent pas directement les fonctionnalités du système,
+mais ils sont essentiels pour assurer sa qualité, sa performance et sa pérennité. Les principaux
+besoins non fonctionnels identifiés pour l'outil de migration multi-agents sont les suivants :
+
+\begin{itemize}
+    \item \textbf{Généricité :} l'outil doit pouvoir traiter différents projets Angular monolithiques, et non uniquement l'application de test utilisée pendant le développement.
+
+    \item \textbf{Fiabilité :} le système doit intégrer des mécanismes de validation afin d'éviter la génération d'un projet MFE incohérent ou non fonctionnel.
+
+    \item \textbf{Maintenabilité :} le code généré doit être clair, structuré et facilement compréhensible par un développeur.
+
+    \item \textbf{Compatibilité :} le projet Angular MFE généré doit continuer à consommer le même backend que l'application monolithique initiale.
+
+    \item \textbf{Performance :} le temps d'exécution du pipeline doit rester raisonnable par rapport à la taille du projet Angular fourni.
+\end{itemize}
+
+\subsection{Identification des acteurs}
+
+Un acteur représente une entité externe qui interagit directement avec le système. Dans notre projet, l'acteur principal est le développeur souhaitant migrer une application Angular monolithique vers une architecture micro-frontend. La figure~\ref{fig:usecase-global} représente le diagramme de cas d'utilisation global de l'outil et met en évidence les principales interactions entre le développeur et le système.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/usecase.png}
+\caption{Diagramme de cas d'utilisation global de l'outil de migration}
+\label{fig:usecase-global}
+\end{figure}
+
+Ce diagramme montre que le développeur peut importer un projet Angular monolithique, lancer le processus de migration, récupérer le projet Angular MFE généré et consulter la documentation de migration.
+
+\section{Étude architecturale}
+
+Dans cette section, nous présentons l'étude architecturale retenue pour l'outil. Nous décrivons les objectifs de l'architecture, les contraintes de conception, l'approche multi-agent, les patterns appliqués, l'organisation logique du système ainsi que le pipeline de migration proposé. Cette étude permet de justifier les choix techniques retenus pour assurer une migration progressive et contrôlée.
+
+\subsection{Objectif de l'architecture proposée}
+
+L'objectif principal de l'architecture est d'automatiser, de manière progressive et contrôlée, la transformation d'un projet Angular monolithique en un ensemble de micro-frontends organisés autour d'un Shell et de plusieurs applications Remote. Cette transformation ne se limite pas à une génération de fichiers : elle nécessite d'analyser la structure existante, de comprendre les dépendances entre modules, de définir un découpage fonctionnel cohérent, puis de migrer les composants, les services, le routage et les éléments partagés.
+
+L'architecture proposée vise donc à répondre à trois besoins essentiels. Premièrement, elle doit produire une compréhension exploitable du monolithe source. Deuxièmement, elle doit générer une cible micro-frontend cohérente et maintenable. Troisièmement, elle doit intégrer des contrôles intermédiaires afin de réduire les erreurs de migration et d'éviter la propagation d'incohérences jusqu'à la phase finale.
+
+\subsection{Contraintes et exigences architecturales}
+
+La migration d'un monolithe Angular vers une architecture micro-frontends impose plusieurs contraintes. Ces contraintes ont guidé la conception du pipeline et expliquent la nécessité d'une architecture structurée, capable de séparer les décisions de conception, les traitements techniques et les contrôles de cohérence. Le tableau~\ref{tab:contraintes-architecture} présente les principales contraintes architecturales ainsi que leur impact sur l'architecture proposée.
+
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|P{3.5cm}|P{9.65cm}|}
+\caption{Contraintes architecturales du pipeline de migration}\label{tab:contraintes-architecture}\\
+\hline
+\textbf{Contrainte} & \textbf{Impact sur l'architecture proposée} \\
+\hline
+Préservation fonctionnelle & Le projet généré doit conserver les principales fonctionnalités, routes, services et interactions de l'application monolithique initiale. \\
+\hline
+Découpage cohérent & Les futurs micro-frontends doivent correspondre à des domaines fonctionnels isolables afin d'éviter un couplage excessif entre les remotes. \\
+\hline
+Maîtrise des dépendances & Les dépendances partagées doivent être identifiées et contrôlées pour éviter les dépendances croisées non souhaitées. \\
+\hline
+Validation progressive & À partir de la conception cible, les étapes principales doivent produire des artefacts vérifiables afin de détecter les erreurs avant leur propagation vers les étapes suivantes. \\
+\hline
+Traçabilité & Le système doit générer une documentation permettant de comprendre les choix de découpage, les transformations effectuées et la structure finale. \\
+\hline
+\end{longtable}
+\endgroup
+
+Ces exigences montrent que le processus de migration n'est pas strictement linéaire. Certaines étapes peuvent nécessiter des corrections, des relances ou des ajustements. Elles justifient donc le recours à une architecture orientée workflow, capable de coordonner les traitements, de contrôler les résultats intermédiaires et de gérer les corrections nécessaires.
+
+\subsection{Approche multi-agent adoptée}
+
+La migration automatique d'une application Angular monolithique vers une architecture micro-frontends nécessite une organisation capable de traiter plusieurs types de tâches. Cette section présente la manière dont l'approche multi-agent est utilisée dans notre architecture afin de répartir ces responsabilités entre des agents spécialisés et de coordonner leur exécution au sein du pipeline.
+
+Dans notre projet, la migration d'un frontend Angular monolithique vers une architecture micro-frontends est organisée comme un enchaînement de traitements de nature différente. Le système doit d'abord extraire une représentation exploitable du projet source, puis proposer un découpage fonctionnel, générer une structure cible, migrer les artefacts applicatifs et vérifier progressivement la cohérence du résultat.
+
+Regrouper ces responsabilités dans un seul traitement aurait rendu le pipeline difficile à maintenir, à faire évoluer et à contrôler. C'est pourquoi l'architecture proposée adopte une approche multi-agent. Ce choix permet de répartir le processus de migration entre plusieurs agents spécialisés, chacun étant associé à une étape précise du workflow et à un périmètre fonctionnel clairement limité.
+
+Ainsi, l'approche multi-agent n'est pas utilisée uniquement pour exploiter des capacités d'intelligence artificielle. Elle constitue surtout un choix architectural permettant d'organiser la migration, de séparer les responsabilités et de rendre chaque étape plus maîtrisable.
+
+L'architecture retenue repose sur un ensemble d'agents spécialisés qui interviennent successivement dans le pipeline. Certains agents sont orientés vers l'analyse du projet source, d'autres vers la conception de l'architecture cible, la génération de la structure micro-frontend, la migration des artefacts applicatifs ou encore la validation des résultats produits.
+
+Chaque agent reçoit un contexte précis, exécute une tâche déterminée et produit un artefact intermédiaire exploitable par les étapes suivantes. Ces artefacts peuvent correspondre à une représentation structurée du monolithe, un découpage en domaines fonctionnels, un plan directeur de migration, une structure Shell/Remotes, des éléments migrés ou un rapport de validation.
+
+La collaboration entre les agents repose sur un état partagé. Celui-ci conserve les informations extraites du projet source, les décisions prises, les artefacts générés, les erreurs détectées et les retours de validation. Cette organisation permet aux agents de travailler de manière coordonnée sans créer de dépendances directes fortes entre eux.
+
+Dans l'architecture proposée, l'orchestrateur constitue la couche de pilotage du pipeline de migration. Il est implémenté autour de LangGraph afin de représenter le workflow sous forme d'un enchaînement contrôlé d'étapes. Son rôle principal est de déclencher les agents dans l'ordre prévu, de transmettre les données nécessaires et de maintenir l'état courant du processus.
+
+L'orchestrateur permet également de gérer les transitions entre les étapes. Lorsqu'un agent termine son traitement, le résultat produit est ajouté au contexte partagé, puis l'orchestrateur décide de l'étape suivante selon l'état du workflow. Cette logique évite une exécution désordonnée des agents et garantit que chaque traitement s'appuie sur les artefacts nécessaires.
+
+Il intervient aussi dans la gestion des erreurs et des retours de validation. Lorsqu'un validateur détecte une incohérence, l'orchestrateur peut bloquer la progression, transmettre un feedback à l'agent concerné ou relancer une étape avec un contexte enrichi. Il joue donc un rôle central dans la fiabilité du pipeline, car il contrôle non seulement l'ordre d'exécution, mais aussi les corrections éventuelles.
+
+\subsection{Patterns architecturaux appliqués au pipeline}
+
+Cette section présente les principaux patterns architecturaux utilisés pour concrétiser l'approche multi-agent dans le pipeline de migration. Ces patterns permettent d'organiser les traitements, de coordonner les agents, de partager le contexte et de contrôler les artefacts produits à chaque étape.
+
+\paragraph*{\textit{Orchestrator--Subagent Pattern} :} 
+Ce pattern est appliqué dans le projet pour séparer la logique de pilotage des traitements spécialisés. L'orchestrateur LangGraph conserve la vision globale du workflow, tandis que les sous-agents prennent en charge des tâches ciblées comme l'analyse, la conception, la génération ou la migration. Cette séparation permet d'éviter qu'un seul composant concentre toute la complexité du processus.
+
+La figure~\ref{fig:pattern-orchestrator-subagent} présente l'application du pattern Orchestrator--Subagent dans le pipeline de migration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth, keepaspectratio]{figures/3.png}
+\caption{Application du pattern Orchestrator--Subagent dans le pipeline de migration}
+\label{fig:pattern-orchestrator-subagent}
+\end{figure}
+
+\paragraph*{\textit{Pipeline Pattern}:} 
+Le pipeline de migration est organisé comme une succession d'étapes contrôlées. Chaque étape produit un résultat intermédiaire qui sert d'entrée à l'étape suivante. Ce pattern permet de transformer progressivement le projet source au lieu de réaliser une migration globale en une seule opération. Il facilite également le suivi de l'avancement et l'identification des erreurs à chaque niveau du processus.
+
+La figure~\ref{fig:pattern-pipeline} illustre l'organisation du processus de migration selon le Pipeline Pattern.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.90\textwidth, keepaspectratio]{figures/2.png}
+\caption{Organisation du processus de migration selon le Pipeline Pattern}
+\label{fig:pattern-pipeline}
+\end{figure}
+
+\paragraph*{\textit{Shared State / Blackboard Pattern}:} 
+L'état partagé joue le rôle de mémoire commune du workflow. Il centralise les informations issues de l'analyse du projet source, les décisions de conception, les artefacts générés, les statuts d'exécution et les retours des validateurs. Grâce à ce mécanisme, chaque agent peut exploiter les résultats produits précédemment sans dépendre directement de l'agent qui les a générés.
+
+La figure~\ref{fig:pattern-blackboard} illustre l'utilisation d'un état partagé pour coordonner les agents du pipeline.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth, keepaspectratio]{figures/1.png}
+\caption{Utilisation d'un état partagé pour coordonner les agents du pipeline}
+\label{fig:pattern-blackboard}
+\end{figure}
+
+\paragraph*{\textit{Generator--Verifier / Validation Gate Pattern}:} 
+Ce pattern est utilisé pour renforcer la fiabilité du pipeline. Certaines étapes produisent des artefacts, comme un plan cible, une structure de projet ou des éléments migrés. Ces artefacts sont ensuite contrôlés par des validateurs avant de passer aux étapes suivantes. En cas d'incohérence, un feedback est transmis afin de corriger ou relancer le traitement concerné. Cette logique limite la propagation des erreurs dans le projet final.
+
+La figure~\ref{fig:pattern-generator-verifier} présente le principe de contrôle des artefacts produits à travers le pattern Generator--Verifier.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth, keepaspectratio]{figures/4.png}
+\caption{Contrôle des artefacts produits à travers le pattern Generator--Verifier}
+\label{fig:pattern-generator-verifier}
+\end{figure}
+
+Ces patterns sont complémentaires dans notre architecture. L'orchestrateur pilote les agents, le pipeline structure l'enchaînement des étapes, l'état partagé conserve le contexte commun, et les mécanismes de validation contrôlent les résultats intermédiaires. Ensemble, ils permettent de construire un processus de migration plus modulaire, traçable et contrôlé.
+
+\subsection{Vue d'ensemble de l'architecture proposée}
+
+Après avoir présenté l'approche multi-agent et les patterns architecturaux appliqués au pipeline, cette section donne une vue globale de l'architecture proposée. L'objectif est de montrer, à un niveau macroscopique, comment le projet Angular monolithique est pris en entrée, traité par le système, puis transformé progressivement en un projet micro-frontend structuré.
+
+La figure~\ref{fig:architecture-pipeline-multiagents} illustre l'architecture globale du pipeline de migration multi-agents. Elle met en évidence l'enchaînement général entre le projet source, les traitements intermédiaires, les mécanismes de contrôle et le projet MFE généré.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth, keepaspectratio]{figures/favoris.png}
+\caption{Architecture globale du pipeline de migration multi-agents}
+\label{fig:architecture-pipeline-multiagents}
+\end{figure}
+
+Cette vue d'ensemble permet de comprendre le fonctionnement global du système sans entrer encore dans le détail de chaque couche. Elle montre que l'architecture proposée repose sur une progression contrôlée, dans laquelle les résultats produits à chaque niveau servent de base aux traitements suivants jusqu'à la génération du livrable final.
+
+\subsection{Architecture logique du système}
+
+L'architecture logique présente le système selon ses grands blocs fonctionnels. Contrairement à la vue d'ensemble, qui montre le flux global de migration, cette section met l'accent sur les responsabilités principales de l'outil : l'entrée du projet source, le pilotage du workflow, les traitements de migration, les contrôles de cohérence et la production du livrable final.
+
+Le tableau~\ref{tab:vue-synthetique-architecture} synthétise ces blocs logiques et précise le rôle de chacun dans le fonctionnement global de l'outil.
+
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|P{2.2cm}|P{3.5cm}|P{7.15cm}|}
+\caption{Vue synthétique des blocs de l'architecture}\label{tab:vue-synthetique-architecture}\\
+\hline
+\textbf{Bloc} & \textbf{Rôle} & \textbf{Fonction dans le système} \\
+\hline
+
+Entrée &
+Projet Angular monolithique &
+Point de départ contenant le code source, la structure fonctionnelle, les services, les routes et les dépendances à migrer. \\
+\hline
+
+Pilotage &
+Orchestrateur LangGraph &
+Supervision du workflow, gestion des transitions, des relances et des boucles de feedback entre les différentes couches. \\
+\hline
+
+Traitement &
+Moteur d'extraction structurelle et agents métier &
+Réalisation des traitements nécessaires à la transformation progressive du monolithe Angular vers une architecture MFE. \\
+\hline
+
+Contrôle &
+Validateurs spécialisés &
+Vérification de la cohérence, de la faisabilité et de la qualité à partir de la couche de conception cible. \\
+\hline
+
+Sortie &
+Projet MFE + documentation &
+Projet final restructuré en micro-frontends avec documentation de migration. \\
+\hline
+\end{longtable}
+\endgroup
+
+Cette organisation logique permet de distinguer les responsabilités sans détailler immédiatement toutes les étapes internes du pipeline. Le moteur d'extraction structurelle prépare les informations nécessaires, les agents réalisent les traitements spécialisés, tandis que l'orchestrateur et les validateurs assurent la coordination, le contrôle et les corrections éventuelles.
+
+\subsection{Pipeline de migration proposé}
+
+Cette section détaille le déroulement interne du pipeline présenté précédemment. Elle précise les couches successives du processus, le rôle de chacune, les artefacts produits ainsi que les mécanismes de contrôle associés. Le tableau~\ref{tab:pipeline-migration} présente cette décomposition de manière synthétique.
+
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.25}
+
+\begin{longtable}{|P{2.5cm}|P{3.0cm}|P{4.85cm}|P{2.2cm}|}
+\caption{Synthèse des couches du pipeline de migration}
+\label{tab:pipeline-migration}\\
+\hline
+\textbf{Couche} & \textbf{Rôle principal} & \textbf{Artefacts produits} & \textbf{Contrôle associé} \\
+\hline
+\endfirsthead
+
+\hline
+\textbf{Couche} & \textbf{Rôle principal} & \textbf{Artefacts produits} & \textbf{Contrôle associé} \\
+\hline
+\endhead
+
+Analyse &
+Produire une représentation structurelle du monolithe Angular &
+Structure du projet, routes, composants, services, dépendances, éléments shared et usages backend &
+Aucun validateur dédié \\
+\hline
+
+Conception cible &
+Définir l'architecture micro-frontends cible &
+Découpage en domaines, identification du Shell, des remotes, plan directeur, stratégie de routage et ordre de migration &
+Validateurs de conception cible \\
+\hline
+
+Génération de structure &
+Matérialiser la base technique du futur projet MFE &
+Workspace, Shell, remotes, dossiers initiaux et configuration de base &
+Validateurs de structure \\
+\hline
+
+Migration détaillée &
+Transformer progressivement les artefacts applicatifs &
+Shared, services, state, composants, templates, styles et routes migrés vers la cible &
+Validateurs spécialisés \\
+\hline
+
+Intégration finale &
+Consolider l'intégration finale &
+Configuration Module Federation, build, documentation technique et livrable final &
+Validateur build \\
+\hline
+
+\end{longtable}
+\endgroup
+
+\begin{itemize}
+    \item \textbf{Couche d'analyse :} cette couche constitue le point de départ technique du pipeline. Elle produit une représentation exploitable du projet source afin que les traitements suivants puissent s'appuyer sur des informations structurées plutôt que sur le code brut.
+
+    \item \textbf{Couche de conception cible :} cette couche transforme les informations extraites en décisions d'architecture. Elle définit les frontières fonctionnelles, le rôle du Shell, les responsabilités des remotes et les règles de structuration du projet cible.
+
+    \item \textbf{Couche de génération de structure :} cette couche matérialise les décisions de conception sous forme d'une base technique MFE. Elle prépare l'environnement cible afin que les artefacts applicatifs puissent ensuite être migrés dans une structure organisée.
+
+    \item \textbf{Couche de migration détaillée :} cette couche prend en charge la transformation progressive des éléments applicatifs. Elle traite séparément les services, le state, les composants, les templates, les styles, le routage et les éléments partagés afin de mieux contrôler chaque type d'artefact.
+
+    \item \textbf{Couche d'intégration finale :} cette couche consolide le projet généré. Elle vérifie la configuration Module Federation, le build, l'intégration des micro-frontends et la documentation nécessaire à la compréhension du livrable.
+
+    \item \textbf{Boucle de correction :} lorsqu'un validateur détecte une erreur ou une incohérence, il renvoie un feedback à l'orchestrateur. Celui-ci peut alors relancer l'étape concernée avec un contexte enrichi ou bloquer la progression si le résultat n'est pas exploitable. Ce mécanisme rend le pipeline plus robuste qu'une génération linéaire sans contrôle.
+\end{itemize}
+
+\section{Présentation de l'équipe Scrum}
+
+Dans cette section, nous présentons l'équipe Scrum impliquée dans le projet. Nous décrivons les rôles retenus, les responsabilités associées et l'adaptation de cette organisation au contexte d'un projet de fin d'études réalisé individuellement.
+
+L'organisation du travail dans Scrum est basée sur des rôles bien définis. Même si notre projet a été réalisé dans le cadre d'un projet de fin d'études, nous avons conservé cette logique afin de mieux structurer le suivi, la priorisation des tâches et les validations effectuées tout au long du stage. Le tableau~\ref{tab:equipe-scrum} présente les rôles de l'équipe Scrum ainsi que les membres associés à chaque responsabilité.
+
+\begingroup
+\renewcommand{\arraystretch}{1.35}
+\begin{longtable}{|l|l|}
+\caption{Définition des rôles de l'équipe Scrum}\label{tab:equipe-scrum}\\
+\hline
+\textbf{Rôle} & \textbf{Membre de l'équipe} \\
+\hline
+Product Owner & Mohamed Khemir \\
+\hline
+Scrum Master & Mohamed Khemir \\
+\hline
+Développeur & Moslem Mohamed \\
+\hline
+\end{longtable}
+\endgroup
+
+Dans cette organisation, le Product Owner intervient principalement dans la clarification du besoin, la validation des choix fonctionnels et l'orientation générale du projet. Le Scrum Master veille au bon déroulement du travail, à la planification des tâches et au suivi de l'avancement. Pour ma part, j'assure également le rôle de développeur, en prenant en charge l'analyse, la conception, l'implémentation, les tests et la documentation de l'outil de migration.
+
+Cette répartition reste adaptée au contexte d'un PFE réalisé individuellement. Elle permet de garder une organisation claire tout en respectant l'esprit de Scrum : avancer par incréments, valider régulièrement les résultats obtenus et ajuster les priorités selon les difficultés rencontrées.
+
+\section{Mise en place de l'application de référence}
+
+Dans cette section, nous présentons la mise en place de l'application de référence utilisée comme base expérimentale pour le projet. Nous décrivons son rôle dans la validation progressive du pipeline de migration ainsi que les principaux éléments techniques qui la composent.
+
+Avant le démarrage des sprints consacrés à l'outil de migration, une phase préparatoire a été réalisée afin de disposer d'une application source représentative. Cette phase n'est pas considérée comme un sprint ; elle sert plutôt de base expérimentale pour tester progressivement les traitements du pipeline.
+
+L'application développée est une application full stack de gestion des clients et des crédits, intégrant un frontend, un backend, une base de données et un mécanisme d'authentification. Elle offre ainsi un cas concret contenant des routes, des composants, des services, des appels backend et des éléments de sécurité applicative.
+
+Ce projet de référence a permis de valider les premières étapes du pipeline, notamment l'extraction structurelle, l'orchestration du workflow et la transformation progressive vers une architecture micro-frontends.
+
+\section{Backlog du produit}
+
+Dans cette section, nous présentons le backlog du produit. Nous regroupons les principales user stories liées à l'outil de migration, en précisant leur type, leur description et leur priorité afin de structurer le développement du projet.
+
+Le Product Backlog regroupe les fonctionnalités principales à développer sous forme de user stories. Après la phase préparatoire consacrée à l'application de référence, le backlog se concentre uniquement sur les besoins liés à l'outil de migration. Le tableau~\ref{tab:product-backlog} présente les user stories du projet, leur type ainsi que leur priorité.
+
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|P{1.0cm}|P{2.7cm}|P{6.6cm}|P{2.25cm}|}
+\caption{Product Backlog du projet}
+\label{tab:product-backlog}\\
+\hline
+\textbf{Id} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+\endfirsthead
+
+\hline
+\textbf{Id} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+\endhead
+
+US01 & Orchestration du workflow & Nous devons mettre en place un orchestrateur de workflow afin de coordonner les étapes du processus de migration, gérer l'état partagé du pipeline et assurer l'enchaînement contrôlé des agents. & Élevée \\
+\hline
+US02 & Couche 1 : Extraction structurelle & Nous devons mettre en place un moteur d'extraction structurelle afin d'extraire les composants, modules, routes, services, dépendances et éléments partagés du projet source. & Élevée \\
+\hline
+US03 & Couche 2 : Conception cible & Nous devons identifier les domaines fonctionnels du projet afin de proposer un découpage cohérent en micro-frontends. & Élevée \\
+\hline
+US04 & Couche 2 : Conception cible & Nous devons générer un plan directeur de migration contenant l'architecture MFE cible, le Shell, les Remotes et les responsabilités associées. & Élevée \\
+\hline
+US05 & Couche 2 : Conception cible & Nous devons valider le plan directeur de migration afin de garantir la cohérence du découpage fonctionnel et de l'architecture proposée. & Moyenne \\
+\hline
+US06 & Couche 3 : Génération structurelle & Nous devons générer l'application Shell afin d'orchestrer les micro-frontends. & Élevée \\
+\hline
+US07 & Couche 3 : Génération structurelle & Nous devons générer les applications Remote selon le plan directeur afin d'isoler les domaines fonctionnels. & Élevée \\
+\hline
+US08 & Couche 3 : Génération structurelle & Nous devons valider la structure générée afin de vérifier sa conformité avec l'architecture MFE cible. & Moyenne \\
+\hline
+US09 & Couche 4 : Migration détaillée & Nous devons migrer les éléments partagés afin de les rendre réutilisables entre le Shell et les Remotes. & Élevée \\
+\hline
+US10 & Couche 4 : Migration détaillée & Nous devons migrer les composants, templates et styles afin de préserver le rendu visuel de l'application source. & Élevée \\
+\hline
+US11 & Couche 4 : Migration détaillée & Nous devons valider les composants migrés afin de détecter les erreurs d'intégration ou de rendu. & Moyenne \\
+\hline
+US12 & Couche 4 : Migration détaillée & Nous devons migrer les services Angular et la gestion d'état afin de préserver la logique applicative du projet initial. & Élevée \\
+\hline
+US13 & Couche 4 : Migration détaillée & Nous devons migrer les routes afin d'assurer la navigation entre le Shell et les Remotes. & Élevée \\
+\hline
+US14 & Couche 4 : Migration détaillée & Nous devons valider l'intégration backend afin de garantir que le projet MFE généré consomme les mêmes API que le monolithe. & Moyenne \\
+\hline
+US15 & Couche 5 : Intégration finale & Nous devons configurer Webpack Module Federation afin de connecter dynamiquement le Shell et les Remotes. & Élevée \\
+\hline
+US16 & Couche 5 : Intégration finale & Nous devons valider le build et la fédération afin de vérifier que le projet généré est fonctionnel. & Élevée \\
+\hline
+US17 & Couche 5 : Intégration finale & Nous devons générer une documentation de migration afin d'expliquer les transformations effectuées. & Moyenne \\
+\hline
+US18 & Couche 5 : Intégration finale & Nous devons permettre à l'utilisateur de récupérer un projet Angular MFE fonctionnel, validé et documenté afin de pouvoir l'exécuter et le maintenir. & Élevée \\
+\hline
+\end{longtable}
+\setlength{\tabcolsep}{6pt}
+
+\section{Planification des sprints}
+
+Dans cette section, nous présentons la planification des sprints du projet. Nous détaillons la durée de chaque sprint, son objectif principal ainsi que l'organisation des releases prévues pour structurer la livraison progressive de l'outil de migration.
+
+La planification des sprints permet de répartir les travaux du projet dans le temps et d'associer chaque période à un objectif clair. Le tableau~\ref{tab:planification-sprints} présente la durée de chaque sprint ainsi que son objectif principal.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{2.0cm}|p{2.0cm}|p{8.85cm}|}
+\caption{Planification des sprints}\label{tab:planification-sprints}\\
+\hline
+\textbf{Sprint} & \textbf{Durée} & \textbf{Objectif principal} \\
+\hline
+Sprint 1 & 2 semaines & Mise en place de l'orchestrateur de workflow et du moteur d'extraction structurelle. \\
+\hline
+Sprint 2 & 2 semaines & Conception cible : identification des domaines fonctionnels et génération du plan directeur de migration. \\
+\hline
+Sprint 3 & 2 semaines & Génération structurelle : création du Shell, des Remotes et validation de la structure générée. \\
+\hline
+Sprint 4 & 2 semaines & Migration des services, de la gestion d'état, des éléments partagés et validation. \\
+\hline
+Sprint 5 & 2 semaines & Migration des routes, des composants, des templates et des styles, et validation. \\
+\hline
+Sprint 6 & 2 semaines & Intégration finale : configuration Module Federation, validation du build, génération de la documentation de migration, livraison et stabilisation du projet final. \\
+\hline
+\end{longtable}
+\endgroup
+
+Afin de mieux structurer la livraison du projet, les sprints sont regroupés en releases. Le tableau~\ref{tab:releases-sprints} présente cette organisation en deux releases principales.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4.5cm}|p{8.65cm}|}
+\caption{Releases et Sprints}\label{tab:releases-sprints}\\
+\hline
+\textbf{Release} & \textbf{Sprints} \\
+\hline
+\textbf{Release 1 : Préparation du pipeline et génération structurelle} & \textbf{Sprint 1 :} Mise en place de l'orchestrateur de workflow et du moteur d'extraction structurelle. \\
+& \textbf{Sprint 2 :} Conception cible, identification des domaines fonctionnels et génération du plan directeur de migration. \\
+& \textbf{Sprint 3 :} Génération du Shell, des applications Remote et validation de la structure MFE générée. \\
+\hline
+\textbf{Release 2 : Migration détaillée et intégration finale} & \textbf{Sprint 4 :} Migration des services, de la gestion d'état, des éléments partagés et validation. \\
+& \textbf{Sprint 5 :} Migration des routes, des composants, des templates et des styles, et validation de l'intégration backend. \\
+& \textbf{Sprint 6 :} Configuration Module Federation, validation finale, documentation, livraison et stabilisation. \\
+\hline
+\end{longtable}
+\endgroup
+
+Ce découpage permet d'organiser les sprints selon des durées adaptées à la complexité de chaque étape tout en respectant les couches de l'architecture adoptée. La phase de préparation reste séparée de la planification Scrum, tandis que les releases formelles regroupent les sprints de réalisation de l'outil. La première release couvre l'orchestration du workflow, l'extraction structurelle, la conception cible et la génération structurelle, alors que la deuxième release regroupe la migration détaillée et l'intégration finale.
+
+% Macro locale pour afficher les outils avec une référence bibliographique
+\newcommand{\toolentry}[3]{%
+\noindent\parbox[t]{\textwidth}{\textbf{#1}~\cite{#2} : #3}\par\vspace{0.45em}}
+
+\section{Environnement du travail}
+
+Dans cette section, nous présentons l'environnement matériel et logiciel utilisé pour réaliser le projet. Nous décrivons les ressources nécessaires au développement de l'application monolithique de référence ainsi que les outils mobilisés pour concevoir, implémenter et exécuter le pipeline de migration.
+
+\subsection{Environnement matériel}
+
+Pour la réalisation de ce projet, nous avons utilisé l'environnement matériel suivant :
+
+\begin{itemize}
+    \item \textbf{Processeur :} Intel Core i5.
+    \item \textbf{Mémoire vive :} 16 Go de RAM.
+    \item \textbf{Stockage :} disque SSD de 512 Go.
+    \item \textbf{Carte graphique :} NVIDIA GeForce RTX 4050.
+\end{itemize}
+
+Cet environnement matériel a permis d'assurer de bonnes performances lors du développement, de l'exécution du pipeline de migration, du traitement des artefacts générés ainsi que de l'utilisation des modèles LLM en local et via des services externes.
+
+\subsection{Environnement logiciel}
+
+Dans le cadre de ce projet, plusieurs outils et technologies ont été mobilisés pour couvrir les besoins liés au développement, à l'orchestration, à l'analyse, à la migration et à la validation :
+
+\toolentry{Python}{python_docs}{langage principal utilisé pour implémenter le pipeline de migration, les agents, les validateurs ainsi que la logique d'orchestration.}
+
+\toolentry{LangGraph}{langgraph_docs}{utilisé pour orchestrer le workflow global du pipeline de migration, gérer l'enchaînement des étapes, le partage du contexte et les boucles de correction entre agents et validateurs.}
+
+\toolentry{Angular}{angular_docs}{utilisé comme technologie de référence pour le projet source monolithique à analyser et migrer vers une architecture micro-frontends.}
+
+\toolentry{Webpack 5 Module Federation}{webpack_module_federation_docs}{mécanisme utilisé pour connecter dynamiquement l'application Shell avec les applications Remote dans l'architecture micro-frontends. Il permet de charger des modules distants à l'exécution et de partager certaines dépendances entre les différentes parties de l'application.}
+
+\toolentry{Spring Boot}{springboot_docs}{utilisé pour les services backend associés à l'application, notamment pour représenter l'environnement cible ou les services interagissant avec le frontend.}
+
+\toolentry{Visual Studio Code}{vscode_docs}{éditeur de code utilisé pour le développement du pipeline, la modification des scripts, la gestion de la configuration ainsi que le suivi du projet.}
+
+\toolentry{GitHub}{github_docs}{utilisé pour la gestion de version du code source, le suivi des évolutions du projet et la collaboration.}
+
+\toolentry{Jira}{jira_docs}{utilisé pour l'organisation et le suivi des tâches du projet, notamment la planification, la priorisation et le suivi de l'avancement.}
+
+\toolentry{Pytest}{pytest_docs}{framework de test utilisé pour vérifier le bon fonctionnement de certaines parties du système et assurer une meilleure fiabilité du pipeline.}
+
+\toolentry{Docker}{docker_docs}{utilisé pour faciliter le déploiement, l'exécution portable du projet et l'isolation de l'environnement d'exécution.}
+
+\toolentry{SonarQube}{sonarqube_docs}{utilisé pour analyser la qualité du code, identifier les problèmes potentiels et améliorer la maintenabilité de la solution développée.}
+
+\toolentry{Ollama}{ollama_docs}{utilisé pour exécuter localement certains modèles LLM, dans le but de tester ou d'exploiter des capacités d'intelligence artificielle dans un environnement local.}
+
+\toolentry{Node.js}{nodejs_docs}{utilisé pour exécuter et construire l'analyseur statique chargé d'extraire des informations structurelles à partir du projet Angular source.}
+
+\toolentry{Pydantic}{pydantic_docs}{utilisé pour structurer, valider et sérialiser les données manipulées par les agents, les états intermédiaires et les artefacts du pipeline.}
+
+\toolentry{Git}{git_docs}{utilisé comme système de gestion de versions local pour le suivi des modifications du projet.}
+
+L'ensemble de cet environnement logiciel a permis de mettre en place une plateforme cohérente combinant analyse statique, orchestration multi-agents, validation des résultats, génération d'artefacts et assistance à la migration d'une architecture Angular monolithique vers une architecture micro-frontends.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Dans cette conclusion, nous récapitulons les éléments principaux présentés dans ce chapitre. Ce chapitre a permis de définir les besoins du projet, les choix architecturaux retenus ainsi que l'organisation du travail. L'étude réalisée a montré l'intérêt d'un pipeline multi-agents pour assurer une migration progressive, structurée et contrôlée vers une architecture micro-frontends.
+
+La phase préparatoire, la planification Scrum, le backlog produit, les sprints, les releases et l'environnement de travail constituent une base claire pour la suite du projet. Le chapitre suivant sera consacré à la première release, qui portera sur la mise en place du workflow, l'extraction structurelle, la conception cible et la génération structurelle de l'architecture micro-frontends.
+

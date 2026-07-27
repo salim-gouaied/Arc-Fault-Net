@@ -1,0 +1,38 @@
+\babel@toc {french}{}\relax 
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {1.1}{\ignorespaces Exemples de secteurs couverts par Talan et enjeux associés}}{4}{table.15}%
+\contentsline {table}{\numberline {1.2}{\ignorespaces Apports du bootcamp par rapport au projet}}{6}{table.18}%
+\contentsline {table}{\numberline {1.3}{\ignorespaces Constats ayant motivé le projet}}{7}{table.22}%
+\contentsline {table}{\numberline {1.4}{\ignorespaces Objectifs du projet}}{8}{table.25}%
+\contentsline {table}{\numberline {1.5}{\ignorespaces Délimitation du périmètre du projet}}{9}{table.27}%
+\contentsline {table}{\numberline {1.6}{\ignorespaces Forces et limites d'une architecture front-end monolithique}}{11}{table.32}%
+\contentsline {table}{\numberline {1.7}{\ignorespaces Éléments critiques dans une configuration Module Federation}}{12}{table.38}%
+\contentsline {table}{\numberline {1.8}{\ignorespaces Points de vigilance dans une architecture micro-frontend}}{13}{table.41}%
+\contentsline {table}{\numberline {1.9}{\ignorespaces Étude comparative des solutions existantes proches du besoin}}{18}{table.53}%
+\contentsline {table}{\numberline {1.10}{\ignorespaces Vue générale des responsabilités de la solution}}{19}{table.55}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {2.1}{\ignorespaces Contraintes architecturales du pipeline de migration}}{25}{table.72}%
+\contentsline {table}{\numberline {2.2}{\ignorespaces Vue synthétique des blocs de l'architecture}}{31}{table.86}%
+\contentsline {table}{\numberline {2.3}{\ignorespaces Synthèse des couches du pipeline de migration}}{32}{table.88}%
+\contentsline {table}{\numberline {2.4}{\ignorespaces Définition des rôles de l'équipe Scrum}}{33}{table.90}%
+\contentsline {table}{\numberline {2.5}{\ignorespaces Product Backlog du projet}}{34}{table.93}%
+\contentsline {table}{\numberline {2.6}{\ignorespaces Planification des sprints}}{36}{table.95}%
+\contentsline {table}{\numberline {2.7}{\ignorespaces Releases et Sprints}}{37}{table.96}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {3.1}{\ignorespaces Planification de la Release 1}}{40}{table.104}%
+\contentsline {table}{\numberline {3.2}{\ignorespaces Backlog du Sprint 1}}{41}{table.107}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces Vue conceptuelle de l'état partagé du pipeline}}{44}{table.113}%
+\contentsline {table}{\numberline {3.4}{\ignorespaces Backlog du Sprint 2}}{45}{table.117}%
+\contentsline {table}{\numberline {3.5}{\ignorespaces Backlog du Sprint 3}}{50}{table.128}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {4.1}{\ignorespaces Planification de la Release 2}}{54}{table.140}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Backlog du Sprint 4}}{55}{table.143}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces Backlog du Sprint 5}}{58}{table.153}%
+\contentsline {table}{\numberline {4.4}{\ignorespaces Backlog du Sprint 6}}{62}{table.164}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {5.1}{\ignorespaces Livrables de la réalisation}}{85}{table.214}%
+\contentsline {table}{\numberline {2}{\ignorespaces Contrat de sortie du moteur d'extraction structurelle}}{}{table.221}%
+\contentsline {table}{\numberline {3}{\ignorespaces Contrat de sortie de l'agent de délimitation des domaines métier}}{}{table.224}%
+\contentsline {table}{\numberline {4}{\ignorespaces Contrat de sortie de l'agent de conception du plan directeur de migration}}{}{table.227}%
+\contentsline {table}{\numberline {5}{\ignorespaces Contrat de sortie de l'agent de génération de l'environnement de travail du projet et du Shell}}{}{table.230}%
+\contentsline {table}{\numberline {6}{\ignorespaces Contrat de sortie de l'agent de génération des squelettes Remote}}{}{table.233}%

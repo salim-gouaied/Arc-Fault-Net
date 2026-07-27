@@ -1,0 +1,320 @@
+\chapter{Release 1 : Préparation du pipeline et génération structurelle}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Dans ce chapitre, nous présentons la première release du projet. Nous présentons les bases nécessaires à la migration d'une application Angular monolithique vers une architecture micro-frontend. Cette release ne réalise pas encore la migration complète du code applicatif ; elle met en place les mécanismes indispensables permettant d'analyser le projet source, de préparer son découpage fonctionnel et de générer une première structure cible.
+
+\section{Planification de la Release 1}
+
+Dans cette section, nous présentons la planification de la Release 1. Nous détaillons les trois sprints qui la composent, leurs objectifs, les user stories associées ainsi que les livrables attendus à la fin de chaque sprint.
+
+La Release 1 est organisée en trois sprints complémentaires, présentés dans le tableau~\ref{tab:planning-release1}.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.8cm}|p{3.6cm}|p{2.7cm}|p{4.45cm}|}
+\caption{Planification de la Release 1}\label{tab:planning-release1}\\
+\hline
+\textbf{Sprint} & \textbf{Objectif} & \textbf{User stories} & \textbf{Livrables attendus} \\
+\hline
+Sprint 1 & Mise en place du socle d'exécution et d'analyse & US01, US02 & Workflow initial, état partagé et rapport d'extraction structurelle \\
+\hline
+Sprint 2 & Conception de l'architecture micro-frontend cible & US03, US04, US05 & Délimitation des domaines métier, plan directeur de migration micro-frontend et validation des sorties de conception \\
+\hline
+Sprint 3 & Génération structurelle du projet micro-frontend & US06, US07, US08 & Environnement de travail du projet Angular, application Shell, applications Remote et structure initiale validée \\
+\hline
+\end{longtable}
+\endgroup
+
+\section{Sprint 1 : Mise en place de l'orchestrateur et du moteur d'extraction structurelle}
+
+Dans cette section, nous présentons le premier sprint de la Release 1. Nous décrivons son objectif, son analyse fonctionnelle et sa conception technique, en mettant l'accent sur l'orchestrateur, l'état partagé et le moteur d'extraction structurelle.
+
+\subsection{Objectif du Sprint 1}
+
+Le Sprint 1 constitue la première étape technique de la migration. Son objectif est de rendre le système capable de lancer un workflow de migration et de produire une première cartographie du projet Angular source. Cette cartographie permet de comprendre l'organisation du monolithe avant de préparer son futur découpage en micro-frontends.
+
+Le tableau~\ref{tab:backlog-sprint1-release1} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.5cm}|p{6.9cm}|p{1.15cm}|}
+\caption{Backlog du Sprint 1}\label{tab:backlog-sprint1-release1}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US01 & Orchestration du workflow & Mettre en place un orchestrateur permettant de piloter les étapes du processus de migration et de maintenir un état partagé. & Élevée \\
+\hline
+US02 & Extraction structurelle & Développer un moteur capable d'identifier les routes, fonctionnalités, services, dépendances et éléments partagés du projet Angular source. & Élevée \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 1}
+
+Avant toute génération d'architecture cible, le système doit disposer d'une vision fiable du projet existant. Le besoin principal de ce sprint est donc double : contrôler le déroulement du processus de migration et extraire les informations structurelles du monolithe Angular.
+
+Le moteur d'extraction structurelle doit analyser le projet source sans exécuter l'application. Il produit une représentation organisée de l'architecture du monolithe, incluant notamment le démarrage, le routage, les fonctionnalités, les services, les dépendances, la sécurité, l'intégration backend et la gestion d'état.
+
+À la fin du sprint, le système doit être capable de recevoir un projet Angular source, de lancer l'extraction structurelle, de sauvegarder le résultat obtenu et de le rendre disponible pour les sprints suivants.
+
+
+\subsection{Conception du Sprint 1}
+
+La conception du Sprint 1 repose sur une séparation claire entre deux responsabilités. L'orchestrateur assure le pilotage du processus global, tandis que le moteur d'extraction structurelle réalise l'analyse technique du projet Angular source. Cette séparation permet de rendre le pipeline plus maintenable et facilite l'ajout de nouvelles étapes dans les sprints suivants.
+
+La figure~\ref{fig:activity-sprint1} montre l'enchaînement des principales actions du Sprint 1. L'exécution commence par la sélection du projet Angular source, puis par l'initialisation de l'état du pipeline. L'orchestrateur lance ensuite le workflow, prépare le contexte d'exécution et déclenche le moteur d'extraction structurelle. Une fois le rapport reçu, il le sauvegarde, met à jour l'état partagé et évalue le résultat de l'exécution. Selon le statut obtenu, le workflow se termine avec succès ou avec une erreur.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{figures/activiteSprint1.png}
+    \caption{Diagramme d'activité UML du workflow du Sprint 1}
+    \label{fig:activity-sprint1}
+\end{figure}
+
+\subsubsection{Conception de l'orchestrateur et de l'état partagé}
+
+L'orchestrateur est conçu comme le composant central de pilotage du pipeline de migration. Son rôle n'est pas d'analyser directement le projet Angular source, mais de coordonner l'exécution des traitements, de contrôler leur ordre, de suivre leur statut et de garantir la transmission des résultats entre les étapes.
+
+Sur le plan technique, l'orchestrateur s'appuie sur plusieurs composants internes. Le gestionnaire des étapes définit l'enchaînement logique du workflow et détermine l'étape suivante selon le résultat obtenu. Le gestionnaire d'état partagé maintient les informations de l'exécution courante, notamment le projet source, l'étape active, les statuts, les résultats intermédiaires et les données produites. Le gestionnaire des artefacts référence les fichiers générés pendant l'exécution. Enfin, le gestionnaire des erreurs permet d'identifier l'étape en échec et de marquer l'exécution avec un statut approprié.
+
+Cette conception permet de rendre le workflow observable et contrôlable. Chaque étape produit un résultat qui est enregistré dans l'état partagé avant d'être utilisé par la suite du processus.
+
+La figure~\ref{fig:component-sprint1} présente la structure technique de l'orchestrateur et ses interactions avec les autres composants du Sprint 1.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/composantS1.png}
+    \caption{Diagramme de composants UML de l'orchestrateur et de l'état partagé}
+    \label{fig:component-sprint1}
+\end{figure}
+
+Le tableau~\ref{tab:etat-partage-sprint1} présente une vue conceptuelle de l'état partagé utilisé par l'orchestrateur.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{3.5cm}|p{9.65cm}|}
+\caption{Vue conceptuelle de l'état partagé du pipeline}\label{tab:etat-partage-sprint1}\\
+\hline
+\textbf{Bloc d'information} & \textbf{Signification} \\
+\hline
+Informations d'exécution & Identifient l'exécution courante et indiquent son statut global. \\
+\hline
+Projet source & Regroupe les informations nécessaires pour localiser et analyser le projet Angular monolithique. \\
+\hline
+Avancement du workflow & Permet de connaître l'étape courante, les étapes déjà terminées et les éventuels points d'arrêt. \\
+\hline
+Suivi des traitements & Conserve le résultat de chaque étape exécutée, avec son statut, son résumé et les erreurs éventuelles. \\
+\hline
+Artefacts produits & Référence les documents générés pendant l'exécution, notamment le rapport d'extraction structurelle. \\
+\hline
+Base de connaissance & Contient les résultats structurés qui seront consommés par les étapes suivantes du pipeline. \\
+\hline
+Journal d'exécution & Garde une trace chronologique des événements importants de l'exécution. \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsubsection{Conception du moteur d'extraction structurelle}
+
+Le moteur d'extraction structurelle est conçu comme un module d'analyse statique dédié aux projets Angular. Son objectif est de parcourir le code source sans exécuter l'application, afin d'extraire les informations nécessaires à la migration vers une architecture micro-frontend. Cette approche permet d'obtenir une cartographie exploitable du monolithe tout en restant indépendante de son environnement d'exécution.
+
+Le moteur est réalisé avec Node.js et TypeScript, un choix cohérent avec l'écosystème Angular. Node.js permet d'accéder aux fichiers du projet, de parcourir son arborescence et de générer le rapport de sortie, tandis que TypeScript facilite la structuration du moteur grâce au typage des données manipulées.
+
+L'analyse repose principalement sur la bibliothèque \textit{ts-morph}, qui permet d'examiner le code TypeScript à travers son arbre syntaxique abstrait. Cette approche est plus fiable qu'une simple recherche textuelle, car elle permet d'identifier les imports, les classes, les décorateurs Angular, les routes, les services, les guards, les appels backend et les éléments liés à la gestion d'état.
+
+La conception du moteur s'articule autour de trois responsabilités : la détection des fichiers importants du projet, la construction d'un contexte d'analyse, puis l'exécution d'analyseurs spécialisés. Ces analyseurs couvrent les principaux aspects du projet source, notamment l'identité du projet, le démarrage de l'application, le routage, les fonctionnalités, les dépendances, l'intégration backend, la sécurité et la gestion d'état.
+
+Le rapport produit constitue l'artefact principal du Sprint 1. Il organise les informations extraites du projet Angular source afin de les rendre exploitables par les sprints suivants.
+
+Nous détaillons dans l'annexe~\ref{annexe:contrat-moteur-extraction} le contrat de sortie du moteur d'extraction structurelle.
+
+\section{Sprint 2 : Conception de l'architecture micro-frontend cible}
+
+Dans cette section, nous présentons le deuxième sprint de la Release 1. Nous décrivons son objectif, son analyse et sa conception, en mettant l'accent sur la délimitation des domaines métier, la génération du plan directeur de migration et la validation des sorties de conception.
+
+\subsection{Objectif du Sprint 2}
+
+Le Sprint 2 a pour objectif de transformer la cartographie produite au Sprint 1 en une proposition d'architecture micro-frontend cible. À ce stade, le système ne génère pas encore physiquement l'environnement de travail du projet Angular, le Shell ou les applications Remote. Il produit plutôt une conception structurée qui servira de base au Sprint 3.
+
+Ce sprint repose sur trois livrables principaux : la délimitation des domaines métier, le plan directeur de migration micro-frontend et la validation des sorties de conception.
+
+Le tableau~\ref{tab:backlog-sprint2-release1} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.4cm}|p{7.0cm}|p{1.15cm}|}
+\caption{Backlog du Sprint 2}\label{tab:backlog-sprint2-release1}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US03 & Délimitation des domaines métier & Identifier les domaines métier candidats à partir du rapport d'extraction structurelle du monolithe Angular. & Élevée \\
+\hline
+US04 & Plan directeur de migration micro-frontend & Produire une architecture cible décrivant le Shell, les Remotes, les responsabilités associées et les éléments partagés. & Élevée \\
+\hline
+US05 & Validation des sorties de conception & Mettre en place un validateur pour la délimitation des domaines métier et un validateur pour le plan directeur de migration micro-frontend. & Moyenne \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 2}
+
+Le Sprint 2 intervient après l'extraction structurelle du projet Angular source. À ce stade, le système dispose d'une cartographie technique du monolithe, mais ces informations doivent être interprétées afin de produire des décisions d'architecture exploitables. Le besoin principal de ce sprint est donc de passer d'une vision descriptive à une vision décisionnelle : identifier les domaines pouvant devenir des micro-frontends autonomes, déterminer les fonctionnalités à conserver initialement dans le Shell, préciser les éléments à mutualiser et produire un plan directeur de migration cohérent. La figure~\ref{fig:usecase-sprint2} présente les principaux cas d'utilisation couverts par le Sprint 2.
+
+
+
+\subsection{Conception du Sprint 2}
+
+La conception du Sprint 2 repose sur une organisation orientée agents. Chaque agent possède une responsabilité précise et consomme les résultats produits par l'étape précédente. Cette approche permet de transformer progressivement le rapport d'extraction structurelle du Sprint 1 en un plan directeur de migration exploitable.
+
+Le premier agent produit une proposition de découpage fonctionnel au format JSON à partir du rapport d'extraction. Après validation, cette sortie est transmise à l'agent de conception du plan directeur de migration. Ce second agent produit un JSON décrivant l'architecture cible. Une fois validé, le plan directeur devient l'artefact de conception principal utilisé par la suite du pipeline.
+
+La figure~\ref{fig:sprint2-agents-pipeline} montre le déroulement global du Sprint 2.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/activiteS2.png}
+    \caption{Diagramme d'activité UML du pipeline de conception et de validation du Sprint 2}
+    \label{fig:sprint2-agents-pipeline}
+\end{figure}
+
+\subsubsection{Conception de l'agent de délimitation des domaines métier}
+
+L'agent de délimitation des domaines métier reçoit le rapport JSON issu du moteur d'extraction structurelle et le transforme en proposition de découpage fonctionnel.
+
+Sur le plan technique, cet agent est organisé autour de quatre composants. Le constructeur de prompt prépare la consigne envoyée au modèle à partir du rapport d'extraction structurelle. Cette consigne précise le rôle de l'agent, les règles à respecter, les informations à analyser et le format de sortie attendu. Elle impose notamment d'utiliser uniquement les données observées, de ne pas inventer de domaines absents du projet et de produire une réponse au format JSON.
+
+Le service d'appel au modèle de langage transmet le prompt au modèle configuré et récupère la réponse générée. Le parseur JSON convertit ensuite cette réponse en structure exploitable par le pipeline et nettoie les éventuelles balises de formatage. Enfin, la sortie structurée représente le résultat final de l'agent.
+
+La figure~\ref{fig:uml-domain-agent} représente l'organisation interne de l'agent de délimitation des domaines métier et les échanges entre ses composants.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/uml_domain_agent.png}
+    \caption{Diagramme de composants UML de l'agent de délimitation des domaines métier}
+    \label{fig:uml-domain-agent}
+\end{figure}
+
+Nous détaillons dans l'annexe~\ref{annexe:contrat-agent-domaines} le contrat de sortie de l'agent de délimitation des domaines métier.
+
+\subsubsection{Conception de l'agent de conception du plan directeur de migration}
+
+L'agent de conception du plan directeur de migration intervient après validation du découpage fonctionnel. Il consomme deux entrées : le rapport JSON d'extraction structurelle et la proposition validée de délimitation des domaines métier. Son rôle est de produire une description structurée de l'architecture micro-frontend cible.
+
+Comme le premier agent, il repose sur un constructeur de prompt, un service d'appel LLM, un parseur JSON et une sortie structurée. Le prompt architectural impose de respecter les domaines validés, d'éviter la sur-fragmentation, de conserver une migration progressive et de rester au niveau conception sans générer de code Angular.
+
+La figure~\ref{fig:uml-plan-agent} présente la structure de l'agent chargé de produire le plan directeur de migration.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/uml_plan_agent.png}
+    \caption{Diagramme de composants UML de l'agent de conception du plan directeur de migration}
+    \label{fig:uml-plan-agent}
+\end{figure}
+
+Nous détaillons dans l'annexe~\ref{annexe:contrat-agent-plan-directeur} le contrat de sortie de l'agent de conception du plan directeur de migration.
+
+\subsubsection{Validation des sorties des agents}
+
+Les sorties produites par les agents du Sprint 2 sont contrôlées avant d'être transmises à l'étape suivante. L'objectif de cette validation est double : vérifier la cohérence interne du JSON produit et vérifier sa cohérence avec les éléments d'entrée utilisés par l'agent.
+
+Le validateur de domaines métier contrôle que la proposition de découpage fonctionnel est bien structurée et qu'elle reste conforme au rapport JSON du moteur d'extraction structurelle. Le validateur du plan directeur contrôle que le plan de migration généré est cohérent avec le rapport d'extraction et avec la sortie validée de l'agent précédent.
+
+Lorsque la validation est réussie, la sortie est acceptée comme artefact exploitable. En cas d'échec, l'agent concerné est relancé afin de produire une nouvelle proposition, avec une limite de trois tentatives.
+
+\section{Sprint 3 : Génération structurelle du projet micro-frontend}
+
+Dans cette section, nous présentons le troisième sprint de la Release 1. Nous décrivons son objectif, son analyse et sa conception, en mettant l'accent sur la génération de l'environnement de travail, du Shell et des squelettes Remote.
+
+\subsection{Objectif du Sprint 3}
+
+Le Sprint 3 a pour objectif de transformer le plan directeur de migration produit au Sprint 2 en une première structure concrète de projet micro-frontend. Il produit les premiers éléments physiques de l'environnement de travail du projet : le squelette du Shell, la librairie partagée, les squelettes des applications Remote et les fichiers de configuration nécessaires à leur intégration.
+
+Ce sprint repose sur deux agents principaux. Le premier agent génère l'environnement de travail du projet et le squelette du Shell. Le second agent génère les squelettes des applications Remote à partir des artefacts déjà validés. Les sorties produites sont ensuite contrôlées avant d'être utilisées par les étapes suivantes du pipeline.
+
+Le tableau~\ref{tab:backlog-sprint3-release1} présente les user stories traitées durant ce sprint.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{1.0cm}|p{3.5cm}|p{6.9cm}|p{1.15cm}|}
+\caption{Backlog du Sprint 3}\label{tab:backlog-sprint3-release1}\\
+\hline
+\textbf{ID} & \textbf{Type} & \textbf{Description} & \textbf{Priorité} \\
+\hline
+US06 & Génération de l'environnement de travail du projet et du Shell & Générer la structure Angular de base, le squelette du Shell et les fichiers de configuration nécessaires au démarrage. & Élevée \\
+\hline
+US07 & Génération des squelettes Remote & Générer les squelettes des applications Remote selon le plan directeur de migration validé. & Élevée \\
+\hline
+US08 & Validation structurelle & Contrôler les sorties générées par les agents afin de vérifier leur cohérence avec les artefacts d'entrée. & Moyenne \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Analyse du Sprint 3}
+
+Le Sprint 3 intervient après la validation du plan directeur de migration. À ce stade, le système dispose d'une architecture cible décrivant le Shell, les Remotes, le routage et les éléments partagés. Le besoin principal de ce sprint est donc de passer d'un artefact de conception à une structure Angular générée, organisée et exploitable. Il ne s'agit pas encore de migrer toute la logique métier du monolithe, mais de créer le socle technique qui permettra d'accueillir progressivement cette migration. La figure~\ref{fig:usecase-sprint3} présente les principaux cas d'utilisation couverts par le Sprint 3.
+
+
+\subsection{Conception du Sprint 3}
+
+La conception du Sprint 3 repose sur une chaîne de génération contrôlée. Le premier agent génère l'environnement de travail du projet et le squelette du Shell à partir du rapport JSON du moteur d'extraction structurelle et du plan directeur de migration validé. Après validation, sa sortie devient une entrée supplémentaire pour l'agent de génération des squelettes Remote.
+
+Le second agent génère les squelettes des Remotes à partir du rapport d'extraction, du plan directeur validé et de la sortie validée du premier agent. En cas d'échec de validation, l'agent concerné peut être relancé avec une limite de trois tentatives.
+
+La figure~\ref{fig:sprint3-generation-pipeline} présente le déroulement global du Sprint 3.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/activiteS3.png}
+    \caption{Diagramme d'activité UML du pipeline de génération structurelle du Sprint 3}
+    \label{fig:sprint3-generation-pipeline}
+\end{figure}
+
+\subsubsection{Conception de l'agent de génération de l'environnement de travail du projet et du Shell}
+
+L'agent de génération de l'environnement de travail du projet et du Shell transforme le rapport d'extraction structurelle et le plan directeur validé en une structure Angular initiale. Cette structure contient le Shell, la librairie partagée, les fichiers de configuration et les éléments nécessaires à l'intégration future des Remotes.
+
+Sur le plan technique, cet agent est organisé autour de cinq composants. Le constructeur de prompt prépare une consigne spécialisée indiquant le format JSON attendu et les règles à respecter. Le service d'appel LLM transmet cette consigne au modèle configuré. Le parseur JSON nettoie et convertit la réponse générée en structure exploitable. Le normalisateur du plan complète ensuite les informations manquantes et applique les conventions techniques liées au Shell, aux chemins des projets, aux routes, à la librairie partagée et à la version Angular. Enfin, le générateur de fichiers matérialise cette sortie en produisant les fichiers de configuration, les fichiers de démarrage, les routes, les environnements et les commandes utiles.
+
+La figure~\ref{fig:uml-workspace-shell-agent} illustre les composants internes de l'agent de génération de l'environnement de travail et du Shell.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/uml_workspace_shell_agent.png}
+    \caption{Diagramme de composants UML de l'agent de génération de l'environnement de travail du projet et du Shell}
+    \label{fig:uml-workspace-shell-agent}
+\end{figure}
+
+Nous détaillons dans l'annexe~\ref{annexe:contrat-agent-workspace-shell} le contrat de sortie de l'agent de génération de l'environnement de travail du projet et du Shell.
+
+\subsubsection{Conception de l'agent de génération des squelettes Remote}
+
+L'agent de génération des squelettes Remote intervient après la validation de la sortie du premier agent. Il utilise les artefacts validés pour déterminer les Remotes à générer, leurs routes de montage, leurs chemins de projet, leurs noms de modules et les fichiers nécessaires à leur intégration.
+
+Cet agent reprend la même base technique que le premier : constructeur de prompt, service d'appel LLM, parseur JSON et normalisateur. Le normalisateur des Remotes applique les conventions de noms, de chemins, de ports, de routes et de dossiers afin de produire une sortie conforme au plan directeur. Le générateur de fichiers Remote crée ensuite les fichiers principaux de chaque squelette, notamment les fichiers de démarrage, la configuration d'application, les routes locales, le fichier de navigation, les fichiers d'environnement, la configuration Webpack et les fichiers TypeScript de base. Enfin, l'intégrateur à l'environnement de travail du projet met à jour les fichiers globaux afin que les Remotes générés soient référencés correctement.
+
+La figure~\ref{fig:uml-remote-skeletons-agent} représente l'organisation de l'agent responsable de la génération des squelettes Remote.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/uml_remote_skeletons_agent.png}
+    \caption{Diagramme de composants UML de l'agent de génération des squelettes Remote}
+    \label{fig:uml-remote-skeletons-agent}
+\end{figure}
+
+Nous détaillons dans l'annexe~\ref{annexe:contrat-agent-remote-skeletons} le contrat de sortie de l'agent de génération des squelettes Remote.
+
+\subsubsection{Validation des sorties de génération}
+
+Les sorties générées au Sprint 3 sont contrôlées avant d'être utilisées par les étapes suivantes. La validation vérifie la cohérence interne des JSON produits et leur conformité avec les artefacts d'entrée utilisés par les agents.
+
+Le validateur de l'environnement de travail du projet et du Shell contrôle la présence des éléments nécessaires : plan du Shell, structure Angular, configuration de démarrage, fichiers générés, commandes utiles et erreurs éventuelles. Le validateur des squelettes Remote vérifie ensuite que chaque Remote possède les informations minimales attendues, notamment son nom, son chemin de projet, ses routes de montage, ses fichiers de démarrage, ses routes locales, son composant d'accueil et ses fichiers de navigation.
+
+Lorsque la validation est réussie, la structure générée est considérée comme exploitable par la suite du pipeline. En cas d'échec, l'agent concerné est relancé afin de produire une nouvelle proposition, avec une limite de trois tentatives.
+

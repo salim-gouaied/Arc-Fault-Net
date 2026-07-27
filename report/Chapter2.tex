@@ -1,0 +1,167 @@
+\chapter{State of the Art}
+\label{chap:sota}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Electrical safety in residential installations has been a major industry concern for many years. Among the faults that need to be detected, series arc faults represent a significant challenge that remains unresolved at this time. In Europe, the IEC~62606 standard \cite{iec62606} defines the tests and requirements related to the development of Arc Fault Detection Devices, and an additional challenge in developing detection systems with very high detection performance is the need to minimize, or even eliminate, the false positive rate.
+
+\medskip
+
+Most detection methods are based on the mathematical analysis of the line current --- transforms associated with descriptors --- with the classification performed by artificial intelligence methods. This chapter reviews the most recent representative works, organized in three families: methods built on hand-crafted descriptors feeding a (shallow or deep) classifier (Section~\ref{sec:sota-descriptors}), lightweight end-to-end neural networks operating on the raw current (Section~\ref{sec:sota-endtoend}), and architectures exploiting attention mechanisms (Section~\ref{sec:sota-attention}). A comparative analysis (Section~\ref{sec:sota-comparative}) then leads to the positioning of our solution (Section~\ref{sec:sota-positioning}).
+
+\section{Descriptor-based methods with machine learning classifiers}
+\label{sec:sota-descriptors}
+
+A first family of methods characterizes each current window by a vector of hand-crafted descriptors, computed in the time, frequency or time--frequency domains, and delegates the decision to a classifier trained on these features.
+
+\medskip
+
+Yang Zhang \emph{et al.} \cite{zhang2024event} reviewed identification features and criteria for arc fault detection, and proposed a detection method that begins with an event-based load classification algorithm. They use descriptors of the current that combine frequency-domain FFT harmonics with time-domain statistical metrics, such as the mean, the variance, the Maximum Slip Difference (MSD) and the Zero Current Period (ZCP). A Sequential Floating Forward Selection (SFFS) algorithm then extracts an optimal feature subset for each specific load category, acknowledging explicitly that no single feature set is discriminative across all loads.
+
+\medskip
+
+Xiaofei Zhang \emph{et al.} \cite{zhang2025background} proposed a method using a periodic background subtraction technique to eliminate normal current variations and environmental noise, on the grounds that the repetitive part of the waveform carries no fault information. They employ 23 signal descriptors across the time, frequency and time--frequency domains to fully characterize the residual current.
+
+\medskip
+
+Liu \emph{et al.} \cite{liu2023fcm} use 8 descriptors, consisting of 5 time-domain eigenvalues (such as peak and kurtosis indices) and 3 frequency-domain eigenvalues (such as the frequency variance), to form a comprehensive feature vector. A Fuzzy C-Means clustering algorithm initially determines cluster centers, and the clustered data are then fed into a hybrid LSTM--CNN neural network for the final classification.
+
+\medskip
+
+Dowalla \emph{et al.} \cite{dowalla2023} use a time-domain analysis of both current and voltage signals to detect series arc faults \emph{and} pinpoint the specific faulty line within an electrical network, in a non-intrusive load monitoring setting. Detection relies on 16 time-domain descriptors, including metrics like the Maximum Euclidean Distance, the Maximum Slip Difference and the Zero Current Period, classified by a random forest to distinguish between normal operation and arc-fault conditions.
+
+\medskip
+
+Xin Ning \emph{et al.} \cite{ning2024cbn} proposed a cost-sensitive arc fault detection method that integrates multi-feature extraction with a Conditional Batch Normalization Convolutional Neural Network (CBN-CNN). The extraction operates over the time, frequency, energy and spatial domains and produces 6 scalar descriptors (maximum, minimum, mean, variance, power spectral entropy and wavelet energy entropy) alongside a 2-dimensional spatial image matrix of the current periods; the cost-sensitive formulation directly addresses the asymmetry between missed detections and false alarms.
+
+\medskip
+
+Su \emph{et al.} \cite{su2026cumulants}, in a work involving the host team, compute \emph{differential higher-order cumulants} of the current --- statistics that are robust to Gaussian noise and sensitive to the non-Gaussian distortions introduced by the arc --- and feed them to a symmetric stacked autoencoder that learns a compact representation before classification.
+
+\medskip
+
+Other approaches are based on time--frequency analysis, most notably wavelet decompositions, whose coefficients serve either as descriptors or as image-like inputs \cite{qu2023multimodal,wang2025mtf}.
+
+\section{Lightweight end-to-end neural networks on the raw current}
+\label{sec:sota-endtoend}
+
+A second family removes the descriptor engineering step altogether and lets a compact neural network learn its own features from the raw current samples, with a strong focus on embedded deployability.
+
+\medskip
+
+Paul \emph{et al.} \cite{paul2021efficient} proposed Efficient-ArcNet, a lightweight convolutional neural network designed to detect series AC arc faults directly from 1-D time-series raw current data. The method employs a teacher--student Knowledge Distillation (KD) technique, in which a robust, high-capacity teacher model transfers its learned feature representations to a much simpler student model that meets the embedded budget.
+
+\medskip
+
+Xin Ning \emph{et al.} \cite{ning2023arceffnet} developed Arc\_EffNet, a lightweight convolutional neural network adapted from the EffNet architecture. Instead of extracted features, the network directly utilizes 800 raw current sampling points --- captured over a single 20~ms power cycle at 40~kHz --- as its input, demonstrating that single-cycle raw-waveform classification is viable at a modest sampling rate.
+
+\medskip
+
+Huang \emph{et al.} \cite{huang2025shufflenet} proposed an improved lightweight convolutional neural network (ShuffleNet~V2-ECA) using raw one-dimensional mains current data as its input, an adapted one-dimensional convolution, and an Efficient Channel Attention mechanism to recover some of the expressiveness lost to the lightweight design.
+
+\medskip
+
+Wang \emph{et al.} \cite{wang2025mtf} follow a hybrid route: the current signal and its FFT magnitude and phase spectra are converted into Markov Transition Field images, fused by adaptive weighting, and classified by an improved residual network (ResNet18 with a convolutional block attention module), reporting high accuracy at the cost of a heavier image-generation pipeline.
+
+\section{Attention-based architectures}
+\label{sec:sota-attention}
+
+The use of specific descriptors is particularly well suited to simple implementation on embedded systems; however, current methods do not always deliver optimal detection performance. A particularly effective strategy derived from modern deep learning is based on \emph{attention mechanisms}. These mechanisms --- channel attention, self-attention and cross-attention --- enable the system to focus on the relatively more important information within a sequence of fused features, thereby contributing to improved classification accuracy.
+
+\medskip
+
+Xin Ning \emph{et al.} \cite{ning2024interp} proposed a lightweight network composed of a convolutional neural network with an attention mechanism. A Short-Time Fourier Transform maps the current signal into the time--frequency domain, and the model's attention weights are used to identify and retain only the most critical frequency bands --- providing at the same time an interpretability tool and a form of learned feature selection.
+
+\medskip
+
+Qu \emph{et al.} \cite{qu2023multimodal} propose a series arc fault detection method based on multimodal feature fusion, using mathematical transforms including statistical descriptors, the Fourier transform, the wavelet packet transform and the continuous wavelet transform. Attention mechanisms enable the model to focus on the most meaningful components among the fused representations.
+
+\medskip
+
+Wang \emph{et al.} \cite{wang2026tdda} designed a Tri-Domain Dynamic Attention (TDDA) module using time-domain, frequency-domain and temporal-derivative information associated with a CNN, within a prototype learning framework. The attention module performs an enhanced, domain-aware feature extraction, and the prototype formulation improves robustness to unseen load types.
+
+\medskip
+
+Choi \emph{et al.} \cite{choi2024feature} presented a model that uses current signal descriptors extracted from both the time domain (raw time-series data) and the frequency domain (FFT magnitudes), processed by a 1-D CNN; an LSTM network with an attention mechanism then focuses on sequence relevance, and the model also identifies the specific load type in operation.
+
+\medskip
+
+Gao \emph{et al.} \cite{gao2023channel} presented a lightweight arc fault detection method using the raw current signal, where a channel attention mechanism dynamically assigns weights across the feature channels of a compact residual network in order to prioritize the information most critical for fault identification.
+
+\section{Comparative analysis}
+\label{sec:sota-comparative}
+
+Table~\ref{tab:sota-comparison} summarizes the reviewed methods along four axes: the input representation, the classification model, the type of attention used (if any), and the main limitation with respect to our objective of a generalizable, embedded, low-false-positive detector.
+
+\begin{table}[H]
+\centering
+\caption{Comparative summary of recent series arc fault detection methods.}
+\label{tab:sota-comparison}
+\renewcommand{\arraystretch}{1.35}
+\small
+\begin{tabular}{|p{2.5cm}|p{3.6cm}|p{3.1cm}|p{2.1cm}|p{2.5cm}|}
+\hline
+\textbf{Reference} & \textbf{Input / features} & \textbf{Model} & \textbf{Attention} & \textbf{Main limitation} \\
+\hline
+Zhang \emph{et al.} \cite{zhang2024event} & FFT harmonics + time stats (MSD, ZCP), SFFS per load & Event-based load classifier + per-class criteria & --- & Requires prior load identification \\
+\hline
+Zhang \emph{et al.} \cite{zhang2025background} & Background-subtracted residual, 23 descriptors & Linear dividing lines & --- & Hand-tuned decision boundaries \\
+\hline
+Liu \emph{et al.} \cite{liu2023fcm} & 8 time/frequency eigenvalues & FCM + LSTM--CNN & --- & Small descriptor set, single domain fusion \\
+\hline
+Dowalla \emph{et al.} \cite{dowalla2023} & 16 time-domain descriptors ($I$ and $V$) & Random forest & --- & Descriptor design bound to seen loads \\
+\hline
+Ning \emph{et al.} \cite{ning2024cbn} & 6 scalar descriptors + 2-D period matrix & CBN-CNN, cost-sensitive & Conditional BN & Descriptor pipeline complexity \\
+\hline
+Su \emph{et al.} \cite{su2026cumulants} & Differential higher-order cumulants & Symmetric stacked autoencoder & --- & Scalar statistics discard waveform locality \\
+\hline
+Paul \emph{et al.} \cite{paul2021efficient} & Raw 1-D current & Lightweight CNN + KD & --- & Single (temporal) view \\
+\hline
+Ning \emph{et al.} \cite{ning2023arceffnet} & 800 raw points / cycle (40 kHz) & Arc\_EffNet & --- & Single view, low bandwidth \\
+\hline
+Huang \emph{et al.} \cite{huang2025shufflenet} & Raw 1-D current & ShuffleNet V2 & ECA (channel) & Single view \\
+\hline
+Wang \emph{et al.} \cite{wang2025mtf} & MTF images of $I$, FFT magnitude/phase & Improved ResNet18 & CBAM & Costly image generation \\
+\hline
+Ning \emph{et al.} \cite{ning2024interp} & STFT spectrogram & Lightweight CNN & Frequency attention & Spectral view only \\
+\hline
+Qu \emph{et al.} \cite{qu2023multimodal} & Statistics + FFT + WPT + CWT & Fusion network & Feature attention & Heavy multi-transform front-end \\
+\hline
+Wang \emph{et al.} \cite{wang2026tdda} & Time, frequency, derivative domains & TDDA-CNN + prototypes & Tri-domain dynamic & Attention within one fused stream \\
+\hline
+Choi \emph{et al.} \cite{choi2024feature} & Raw current + FFT magnitudes & 1-D CNN + LSTM & Sequence attention & Sequential fusion only \\
+\hline
+Gao \emph{et al.} \cite{gao2023channel} & Raw 1-D current & Lightweight residual CNN & Channel attention & Single view \\
+\hline
+\end{tabular}
+\end{table}
+
+Three observations emerge from this review:
+
+\begin{enumerate}[itemsep=2pt]
+    \item \textbf{Domain fusion is decisive but usually shallow.} The works that combine several signal domains (time, frequency, time--frequency) consistently outperform single-domain ones, yet the fusion is almost always performed by simple concatenation of features or by attention \emph{within} a single fused stream --- no reviewed method lets two domain-specific branches attend to each other in a position-dependent way.
+    \item \textbf{Attention is used for feature selection, rarely for cross-domain alignment.} Existing attention modules recalibrate channels \cite{huang2025shufflenet,gao2023channel}, select frequency bands \cite{ning2024interp} or weight fused descriptors \cite{qu2023multimodal,wang2026tdda}; sequence-level query--key--value cross-attention between the domain representations of the same cycle --- i.e.\ fusing the views \emph{before} pooling --- remains unexplored in this application domain.
+    \item \textbf{Generalization is rarely measured as such.} Most studies report performance on random splits of their own dataset; evaluation protocols in which \emph{entire recordings, loads or campaigns} are held out --- the situation actually faced by a deployed AFDD --- are largely absent, as is the analysis of the false positives that dominate industrial acceptability.
+\end{enumerate}
+
+\section{Positioning of our solution}
+\label{sec:sota-positioning}
+
+The solution proposed at this stage of the project is a single-cycle detection model, \emph{Arc-FaultNet}: a lightweight \textbf{dual-branch} convolutional neural network that extracts features from the line current along two complementary views --- a \textbf{temporal branch} fed with four physics-informed derived channels, and a \textbf{spectral branch} fed with the STFT spectrogram of the same cycle --- refines each stream with \textbf{channel attention} (squeeze-and-excitation), and fuses the two feature sequences with a \textbf{bidirectional multi-head Q/K/V cross-attention} before classification. This detector constitutes the first expert of the multi-model voting system defined in Chapter~\ref{chap:presentation}; the memory-based expert and the voting layer, planned as the continuation of this work, will build on the same data pipeline and evaluation methodology.
+
+\medskip
+
+A remark on method: every architectural choice in this detector follows the same engineering discipline --- an initial option selected under an explicit hypothesis, and, whenever the experimental evidence contradicted that hypothesis, a revision argued in terms of what is gained \emph{and} what is given up. The fusion mechanism is the clearest example: a channel-gating fusion was first adopted as the prudent option in a small-data regime, and was later replaced by the sequence-level cross-attention after an error analysis identified its structural limitation; both the reasoning and the measured trade-off are detailed in Sections~\ref{sec:cross-attention} and~\ref{sec:phase6}. The main contributions of this work with respect to the reviewed literature are the following:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{A dual-branch multimodal detector with physics-informed inputs.} Instead of choosing between raw waveform and spectrogram, both views are processed by dedicated branches; the temporal branch receives four derived channels (normalized current, first difference, Teager--Kaiser energy, sliding RMS) that encode the known arc signatures of Section~\ref{sec:signatures} as inductive biases.
+    \item \textbf{Sequence-level Q/K/V cross-attention between the two domains.} The temporal and spectral feature sequences attend to each other bidirectionally \emph{before} pooling, enabling position-dependent cross-domain alignment (e.g.\ matching a waveform discontinuity with a broadband burst at the same instant) --- a fusion level not reached by the channel-level or single-stream attention of existing works, and adopted after a comparative study against the simpler channel-gating alternative.
+    \item \textbf{A generalization-first evaluation methodology.} The model is validated not only on stratified random splits with multi-seed repetitions, but also with recording-level GroupKFold (whole experiments held out), an inter-campaign holdout, a corrected component-wise ablation study, and a forensic analysis of every false positive.
+    \item \textbf{An embedded-compatible design integrated in a system perspective.} With about 315k parameters operating on 2\,048-point cycles at 102.4~kHz, the detector fits microcontroller-class deployment and is designed as the first expert of the multi-model voting system presented in Chapter~\ref{chap:presentation}.
+\end{itemize}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+The literature on series arc fault detection has converged on compact learning-based classifiers, fed either by hand-crafted descriptors or by raw signals, with attention mechanisms increasingly used to focus the models on the most informative components. Two gaps remain: the absence of position-aware fusion between the temporal and spectral views of the current, and the scarcity of evaluation protocols that actually measure generalization to unseen conditions. The next chapter presents the design of Arc-FaultNet and of its data pipeline, which addresses both.

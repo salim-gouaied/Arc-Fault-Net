@@ -203,6 +203,29 @@ def evaluate(
     }
 
 
+@torch.no_grad()
+def predict_probs(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    desc: str = "Predict"
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Return (probs, labels) for a loader, in loader order.
+    Requires shuffle=False so the output can be aligned with dataset indices.
+    """
+    if hasattr(loader.dataset, 'dataset'):
+        loader.dataset.dataset.training = False
+    model.eval()
+
+    probs, labels = [], []
+    for x_1d, x_2d, y, _ in tqdm(loader, desc=desc, leave=False):
+        p = torch.sigmoid(model(x_1d.to(device), x_2d.to(device)))
+        probs.append(p.cpu().numpy().ravel())
+        labels.append(y.numpy().ravel())
+    return np.concatenate(probs), np.concatenate(labels)
+
+
 def compute_pos_weight(labels: np.ndarray, device: torch.device) -> torch.Tensor:
     """
     Compute pos_weight for BCEWithLogitsLoss from train labels only.
@@ -359,6 +382,7 @@ def run_leave_one_charge_out_cv(
     use_amplitude: bool = False,
     deep_classifier: bool = False,
     fusion_mode: str = 'gated',
+    use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -416,6 +440,7 @@ def run_leave_one_charge_out_cv(
                       use_amplitude=use_amplitude,
                       deep_classifier=deep_classifier,
                       fusion_mode=fusion_mode,
+                      use_channel_attn=use_channel_attn,
                       fs=fs, n_fft=n_fft).to(device)
         n_params = sum(p.numel() for p in model.parameters())
 
@@ -557,6 +582,7 @@ def run_single_training(
     use_amplitude: bool = False,
     deep_classifier: bool = False,
     fusion_mode: str = 'gated',
+    use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512,
     channel_dropout: float = 0.0
@@ -614,6 +640,7 @@ def run_single_training(
                       use_amplitude=use_amplitude,
                       deep_classifier=deep_classifier,
                       fusion_mode=fusion_mode,
+                      use_channel_attn=use_channel_attn,
                       fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
@@ -698,6 +725,7 @@ def run_kfold_cv(
     use_amplitude: bool = False,
     deep_classifier: bool = False,
     fusion_mode: str = 'gated',
+    use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
@@ -761,6 +789,7 @@ def run_kfold_cv(
                           use_amplitude=use_amplitude,
                           deep_classifier=deep_classifier,
                           fusion_mode=fusion_mode,
+                          use_channel_attn=use_channel_attn,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -834,14 +863,8 @@ def run_kfold_cv(
 #  GROUP K-FOLD CROSS-VALIDATION (ANTI-LEAKAGE)
 # ═══════════════════════════════════════════════════════
 
-def load_group_ids(data_dir: Path, n_samples: int, group_level: str = 'recording') -> np.ndarray:
-    """
-    Derive group IDs from metadata.csv for group-based cross-validation.
-    Returns string array aligned with X_multi.npy / y.npy.
-
-    recording: each unique exp_name is a group.
-    session:   regex exp(\d+) extraction, fallback 'other'.
-    """
+def load_metadata(data_dir: Path, n_samples: int) -> pd.DataFrame:
+    """Load metadata.csv and assert row-by-row alignment with X_multi.npy / y.npy."""
     metadata_path = data_dir / 'metadata.csv'
     if not metadata_path.exists():
         raise FileNotFoundError(f"metadata.csv not found at {metadata_path}")
@@ -853,6 +876,55 @@ def load_group_ids(data_dir: Path, n_samples: int, group_level: str = 'recording
             f"metadata.csv has {len(meta)} rows but dataset has {n_samples} samples. "
             f"They must be aligned row-by-row. Aborting."
         )
+    return meta
+
+
+def load_alternance_ids(data_dir: Path, n_samples: int) -> np.ndarray:
+    """
+    Sub-group IDs at the *alternance* level: one arc burst / one normal window.
+
+    Several consecutive 20 ms cycles are cut from the same alternance, so those
+    cycles are strongly correlated. Any split that is meant to be honest — even a
+    validation split used only for early stopping — must keep a whole alternance
+    on one side. In the 2024 campaigns an alternance holds up to 88 cycles; in the
+    2026 campaign each recording contributes a single cycle, so the alternance ID
+    degenerates to the cycle ID (which is correct: those recordings are independent).
+    """
+    meta = load_metadata(data_dir, n_samples)
+    for col in ('dataset', 'exp_name', 'alt_index'):
+        if col not in meta.columns:
+            raise ValueError(f"metadata.csv must have '{col}' for alternance-level splits")
+    return (meta['dataset'].astype(str) + '|' + meta['exp_name'].astype(str)
+            + '|' + meta['alt_index'].astype(str)).values
+
+
+def load_group_ids(data_dir: Path, n_samples: int, group_level: str = 'recording') -> np.ndarray:
+    r"""
+    Derive group IDs from metadata.csv for group-based cross-validation.
+    Returns string array aligned with X_multi.npy / y.npy.
+
+    campaign:  each acquisition campaign is a group (metadata 'dataset' column):
+               8_juillet / 15_juillet / 22_juillet (IJL 2024) + OthmaneSalim (2026).
+               This is the coarsest and most honest level available: the dataset
+               carries no per-experiment load information, so leave-one-charge-out
+               is impossible and leave-one-campaign-out replaces it.
+    recording: each unique exp_name is a group. Unbalanced here — the three 2024
+               campaigns are one monolithic recording each (2.7k-3.8k cycles) while
+               the 2026 campaign splits into 22 small recordings (40-83 cycles).
+    session:   regex exp(\d+) extraction, fallback 'other'. Equivalent to campaign
+               on the current dataset, kept for backwards compatibility.
+    """
+    meta = load_metadata(data_dir, n_samples)
+
+    if group_level == 'campaign':
+        if 'dataset' not in meta.columns:
+            raise ValueError("metadata.csv must have a 'dataset' column for campaign-level CV")
+        group_ids = meta['dataset'].values.astype(str)
+        unique_groups, counts = np.unique(group_ids, return_counts=True)
+        print(f"\n  Group level 'campaign': {len(unique_groups)} unique groups")
+        for g, c in zip(unique_groups, counts):
+            print(f"    {g}: {c} cycles")
+        return group_ids
 
     # Determine experiment name column
     if 'exp_name' in meta.columns:
@@ -886,6 +958,7 @@ def run_groupkfold_cv(
     dataset: ArcFaultDataset,
     device: torch.device,
     group_level: str = 'recording',
+    val_mode: str = 'auto',
     n_folds: int = 5,
     epochs: int = 80,
     lr: float = 3e-4,
@@ -903,19 +976,26 @@ def run_groupkfold_cv(
     use_amplitude: bool = False,
     deep_classifier: bool = False,
     fusion_mode: str = 'gated',
+    use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512
 ) -> Dict:
     """
-    Group-based K-Fold cross-validation preventing data leakage.
+    Group-based cross-validation preventing data leakage.
 
-    - recording level: StratifiedGroupKFold on exp_name groups.
-      Measures generalization to unseen recordings (LOCO substitute).
-    - session level: LeaveOneGroupOut on exp11/exp12/exp13/other.
-      Measures inter-session shift.
+    - campaign level: LeaveOneGroupOut on acquisition campaigns
+      (8/15/22 juillet IJL 2024 + OthmaneSalim 2026). Each fold trains on three
+      campaigns and tests on the fourth. This is the primary generalization
+      protocol: the dataset has no per-experiment load labels, so
+      leave-one-charge-out cannot be run and leave-one-campaign-out replaces it.
+    - session level: same thing via regex on exp_name (legacy alias).
+    - recording level: StratifiedGroupKFold on exp_name groups. Folds are very
+      unbalanced on this dataset (one 2024 recording = up to 3820 cycles vs
+      ~80 for a 2026 recording), so read its mean ± std with care.
 
-    All alternances from the same group stay in a single fold.
-    Val set is also split by group to prevent train/val leakage.
+    All cycles from the same group stay in a single fold. The validation split is
+    also leakage-free: `val_mode` controls how it is carved out of the training
+    groups (see --val-mode).
     """
     start_time = time.time()
 
@@ -925,7 +1005,7 @@ def run_groupkfold_cv(
     indices = np.arange(len(dataset))
 
     # ── Choose splitter ──────────────────────────────────
-    if group_level == 'session':
+    if group_level in ('session', 'campaign'):
         splitter = LeaveOneGroupOut()
         splits = list(splitter.split(indices, labels, groups=group_ids))
         n_actual_folds = len(splits)
@@ -950,15 +1030,42 @@ def run_groupkfold_cv(
     run_dir = output_dir / f"{model_name}_groupkfold_{group_level}_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    level_desc = ("unseen recordings (LOCO substitute)" if group_level == 'recording'
-                  else "inter-session shift")
+    # ── Resolve how the validation set is carved out of the training groups ──
+    # 'group' spends whole groups on validation. With only 4 campaign groups that
+    # costs a full campaign (up to 35% of the data) and leaves 2 campaigns to train
+    # on, so it is only sensible when there are enough groups to spare.
+    n_train_groups_typical = len(np.unique(group_ids)) - 1
+    if val_mode == 'auto':
+        val_mode_eff = 'group' if n_train_groups_typical >= 6 else 'alternance'
+    else:
+        val_mode_eff = val_mode
+    alternance_ids = (load_alternance_ids(data_dir, len(dataset))
+                      if val_mode_eff == 'alternance' else None)
+
+    level_desc = {
+        'campaign':  "generalization to an UNSEEN ACQUISITION CAMPAIGN (LOCO substitute)",
+        'session':   "inter-session shift",
+        'recording': "generalization to unseen recordings",
+    }.get(group_level, group_level)
+    val_desc = {
+        'alternance': "15% of training-campaign ALTERNANCES (label-stratified, "
+                      "no arc burst shared with train)",
+        'group':      "whole training groups (~15%)",
+        'random':     "15% of training cycles, label-stratified (cycle-level, "
+                      "correlated with train — use only for smoke tests)",
+    }[val_mode_eff]
     print(f"\n{'='*60}")
-    print(f"GROUP K-FOLD CROSS-VALIDATION  (anti-leakage)")
+    print(f"GROUP CROSS-VALIDATION  (anti-leakage)")
     print(f"Model: {model_name}  |  group_level={group_level}  |  seed={seed}")
     print(f"Measures: {level_desc}")
+    print(f"Val split ({val_mode_eff}): {val_desc}")
     print(f"{'='*60}")
 
     fold_results = []
+    # Out-of-fold predictions: with LeaveOneGroupOut every cycle is tested exactly
+    # once, by a model that never saw its group → they pool into one honest matrix.
+    oof_probs = np.full(len(dataset), np.nan, dtype=np.float64)
+    oof_fold = np.full(len(dataset), -1, dtype=np.int64)
 
     for fold_idx, (train_val_idx, test_idx) in enumerate(splits):
         fold_seed = seed + fold_idx
@@ -971,19 +1078,44 @@ def run_groupkfold_cv(
             f"LEAKAGE fold {fold_idx}: groups in both train_val and test: "
             f"{test_groups & train_val_groups}")
 
-        # ── Sub-split train_val → train + val BY GROUP (~15% groups to val) ──
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=fold_seed)
-        tv_train_sub, tv_val_sub = next(gss.split(
-            train_val_idx, labels[train_val_idx], groups=group_ids[train_val_idx]))
+        # ── Sub-split train_val → train + val (leakage-free, see val_mode_eff) ──
+        if val_mode_eff == 'group':
+            gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=fold_seed)
+            tv_train_sub, tv_val_sub = next(gss.split(
+                train_val_idx, labels[train_val_idx], groups=group_ids[train_val_idx]))
+        elif val_mode_eff == 'alternance':
+            # ~1/7 of the alternances to val, label-stratified, alternances intact
+            sub_groups = alternance_ids[train_val_idx]
+            if _HAS_STRATIFIED_GROUP_KFOLD:
+                sub_splitter = StratifiedGroupKFold(
+                    n_splits=7, shuffle=True, random_state=fold_seed)
+            else:
+                sub_splitter = GroupKFold(n_splits=7)
+            tv_train_sub, tv_val_sub = next(sub_splitter.split(
+                train_val_idx, labels[train_val_idx], groups=sub_groups))
+        elif val_mode_eff == 'random':
+            skf_sub = StratifiedKFold(n_splits=7, shuffle=True, random_state=fold_seed)
+            tv_train_sub, tv_val_sub = next(skf_sub.split(
+                train_val_idx, labels[train_val_idx]))
+        else:
+            raise ValueError(f"Unknown val_mode: {val_mode_eff}")
+
         train_idx = train_val_idx[tv_train_sub]
         val_idx = train_val_idx[tv_val_sub]
 
         # ── Anti-leakage: pairwise disjoint ──
         train_groups = set(group_ids[train_idx])
         val_groups = set(group_ids[val_idx])
-        assert train_groups.isdisjoint(val_groups), (
-            f"LEAKAGE fold {fold_idx}: groups shared train↔val: "
-            f"{train_groups & val_groups}")
+        if val_mode_eff == 'group':
+            assert train_groups.isdisjoint(val_groups), (
+                f"LEAKAGE fold {fold_idx}: groups shared train↔val: "
+                f"{train_groups & val_groups}")
+        elif val_mode_eff == 'alternance':
+            train_alts = set(alternance_ids[train_idx])
+            val_alts = set(alternance_ids[val_idx])
+            assert train_alts.isdisjoint(val_alts), (
+                f"LEAKAGE fold {fold_idx}: alternances shared train↔val: "
+                f"{sorted(train_alts & val_alts)[:5]}")
         assert train_groups.isdisjoint(test_groups), (
             f"LEAKAGE fold {fold_idx}: groups shared train↔test: "
             f"{train_groups & test_groups}")
@@ -1035,6 +1167,7 @@ def run_groupkfold_cv(
                           use_amplitude=use_amplitude,
                           deep_classifier=deep_classifier,
                           fusion_mode=fusion_mode,
+                          use_channel_attn=use_channel_attn,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -1055,6 +1188,17 @@ def run_groupkfold_cv(
         test_metrics = evaluate(model, test_loader, criterion, device,
                                 f"Fold {fold_idx+1} Test", threshold)
         writer.close()
+
+        # ── Store raw test probabilities (threshold-free re-analysis later) ──
+        fold_probs, fold_labels = predict_probs(model, test_loader, device,
+                                                f"Fold {fold_idx+1} Probs")
+        assert np.array_equal(fold_labels.astype(int), labels[test_idx].astype(int)), \
+            f"fold {fold_idx}: prediction order does not match test_idx order"
+        np.savez(fold_dir / 'test_predictions.npz',
+                 idx=test_idx, probs=fold_probs, labels=fold_labels,
+                 groups=np.array([str(g) for g in group_ids[test_idx]]))
+        oof_probs[test_idx] = fold_probs
+        oof_fold[test_idx] = fold_idx + 1
 
         print(f"    → Acc={100*test_metrics['accuracy']:.2f}%  "
               f"F1={100*test_metrics['f1']:.2f}%  "
@@ -1118,18 +1262,56 @@ def run_groupkfold_cv(
         summary[f'{m}_mean'] = float(mean)
         summary[f'{m}_std'] = float(std)
 
+    # ── Pooled out-of-fold metrics ───────────────────────
+    # Mean ± std over folds weights a 60-cycle fold like a 3820-cycle one. When the
+    # folds partition the dataset (LeaveOneGroupOut), pooling every out-of-fold
+    # prediction into a single matrix is the number to quote as "the" test score.
+    tested = ~np.isnan(oof_probs)
+    pooled = None
+    if tested.sum() > 0:
+        p = oof_probs[tested]
+        l = labels[tested].astype(int)
+        pred = (p > threshold).astype(int)
+        tp = int(((pred == 1) & (l == 1)).sum()); fp = int(((pred == 1) & (l == 0)).sum())
+        fn = int(((pred == 0) & (l == 1)).sum()); tn = int(((pred == 0) & (l == 0)).sum())
+        prec = tp / (tp + fp + 1e-8); rec = tp / (tp + fn + 1e-8)
+        pooled = {
+            'n_tested': int(tested.sum()),
+            'covers_full_dataset': bool(tested.all()),
+            'accuracy': (tp + tn) / max(tested.sum(), 1),
+            'precision': prec, 'recall': rec,
+            'f1': 2 * prec * rec / (prec + rec + 1e-8),
+            'specificity': tn / (tn + fp + 1e-8),
+            'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn,
+        }
+        np.savez(run_dir / 'oof_predictions.npz',
+                 probs=oof_probs, labels=labels.astype(int), fold=oof_fold,
+                 groups=np.array([str(g) for g in group_ids]))
+        print(f"\n  POOLED OUT-OF-FOLD ({pooled['n_tested']}/{len(dataset)} cycles, "
+              f"each predicted by a model that never saw its {group_level}):")
+        print(f"    Accuracy    : {100*pooled['accuracy']:.2f}%")
+        print(f"    F1          : {100*pooled['f1']:.2f}%")
+        print(f"    Precision   : {100*pooled['precision']:.2f}%")
+        print(f"    Recall      : {100*pooled['recall']:.2f}%")
+        print(f"    Specificity : {100*pooled['specificity']:.2f}%")
+        print(f"    TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+
     print(f"\n  Interpretation:")
     if group_level == 'recording':
         print(f"    group-level=recording measures generalization to NEW RECORDINGS")
-        print(f"    (substitute for leave-one-charge-out when charge info is unavailable)")
+        print(f"    (folds are size-unbalanced on this dataset — prefer 'campaign')")
     else:
-        print(f"    group-level=session measures INTER-SESSION shift")
-        print(f"    (exp11=8 juil, exp12=15 juil, exp13=22 juil, other=OthmaneSalim)")
+        print(f"    group-level={group_level} measures generalization to an UNSEEN CAMPAIGN")
+        print(f"    (8 juil / 15 juil / 22 juil 2024 IJL + OthmaneSalim 2026)")
+        print(f"    Stands in for leave-one-charge-out, which the dataset cannot support:")
+        print(f"    the 2024 campaigns carry no per-experiment load labels.")
 
     duration = time.time() - start_time
     summary.update({
         'model_name': model_name,
         'group_level': group_level,
+        'val_mode': val_mode_eff,
+        'pooled_oof': pooled,
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
@@ -1174,8 +1356,18 @@ def main():
     parser.add_argument('--n-folds', type=int, default=5,
                         help='(kfold/groupkfold mode) Number of folds (default: 5)')
     parser.add_argument('--group-level', type=str, default='recording',
-                        choices=['recording', 'session'],
-                        help='(groupkfold mode) Group level for splits (default: recording)')
+                        choices=['recording', 'session', 'campaign'],
+                        help='(groupkfold mode) Group level for splits (default: recording). '
+                             'campaign = leave-one-acquisition-campaign-out (4 folds, '
+                             'recommended: the honest generalization protocol on this dataset)')
+    parser.add_argument('--val-mode', type=str, default='auto',
+                        choices=['auto', 'alternance', 'group', 'random'],
+                        help='(groupkfold mode) How the val set is taken from the training '
+                             'groups. alternance = 15%% of training alternances, label-'
+                             'stratified, no arc burst split across train/val (default when '
+                             'fewer than 6 groups). group = whole groups (costs a full '
+                             'campaign at campaign level). random = cycle-level, leaky, '
+                             'smoke tests only.')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
@@ -1187,8 +1379,8 @@ def main():
                         help='Classification threshold for sigmoid output')
     parser.add_argument('--use-pos-weight', action='store_true',
                         help='Use pos_weight in BCEWithLogitsLoss for class imbalance')
-    parser.add_argument('--data-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset')
-    parser.add_argument('--output-dir', type=str, default='/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs')
+    parser.add_argument('--data-dir', type=str, default='home/top/Arc-Fault-Net/labeled_dataset')
+    parser.add_argument('--output-dir', type=str, default='runs')
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true', help='Force CPU training')
@@ -1208,6 +1400,10 @@ def main():
                         help='Add learnable amplitude to Gabor filters')
     parser.add_argument('--deep-clf', action='store_true',
                         help='Use deeper classifier head with BatchNorm')
+    parser.add_argument('--no-channel-attn', action='store_true',
+                        help='Disable the temporal-branch channel attention '
+                             '(DescriptorChannelAttention). It is ON by default; '
+                             'use this flag only for the channel-attention ablation.')
     parser.add_argument('--fusion-mode', type=str, default='gated',
                         choices=['gated', 'cross_attention', 'concat'],
                         help='V2 fusion: gated (cross-conditioned gating), '
@@ -1270,6 +1466,7 @@ def main():
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
             fusion_mode=args.fusion_mode,
+            use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1295,6 +1492,7 @@ def main():
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
             fusion_mode=args.fusion_mode,
+            use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1304,6 +1502,7 @@ def main():
             dataset=dataset,
             device=device,
             group_level=args.group_level,
+            val_mode=args.val_mode,
             n_folds=args.n_folds,
             epochs=args.epochs,
             lr=args.lr,
@@ -1321,6 +1520,7 @@ def main():
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
             fusion_mode=args.fusion_mode,
+            use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft
         )
@@ -1345,6 +1545,7 @@ def main():
             use_amplitude=args.use_amplitude,
             deep_classifier=args.deep_clf,
             fusion_mode=args.fusion_mode,
+            use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft,
             channel_dropout=args.channel_dropout

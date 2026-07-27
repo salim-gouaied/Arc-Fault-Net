@@ -1,0 +1,27 @@
+\babel@toc {english}{}\relax 
+\babel@toc {french}{}\relax 
+\babel@toc {english}{}\relax 
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {1.1}{\ignorespaces Main stages of the project.}}{6}{table.caption.24}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {2.1}{\ignorespaces Comparative summary of recent series arc fault detection methods.}}{15}{table.caption.44}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {3.1}{\ignorespaces The three acquisition channels and their roles in the pipeline.}}{19}{table.caption.56}%
+\contentsline {table}{\numberline {3.2}{\ignorespaces Composition of the final labeled dataset.}}{21}{table.caption.69}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces Effect of the decimation stage.}}{22}{table.caption.71}%
+\contentsline {table}{\numberline {3.4}{\ignorespaces The four derived input channels of the temporal branch.}}{24}{table.caption.76}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {4.1}{\ignorespaces Organization of the codebase.}}{29}{table.caption.97}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Common training configuration.}}{30}{table.caption.99}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces First honest evaluation (V1, combined dataset).}}{31}{table.caption.105}%
+\contentsline {table}{\numberline {4.4}{\ignorespaces V1 + SE, multiple seeds (selection of runs).}}{31}{table.caption.110}%
+\contentsline {table}{\numberline {4.5}{\ignorespaces Controlled comparison of the fusion mechanisms (identical everything else).}}{33}{table.caption.119}%
+\contentsline {table}{\numberline {4.6}{\ignorespaces Corrected component-wise ablation (single split, seed 42).}}{35}{table.caption.124}%
+\contentsline {table}{\numberline {4.7}{\ignorespaces Final ranking of component contributions.}}{35}{table.caption.127}%
+\contentsline {table}{\numberline {4.8}{\ignorespaces Recording-level GroupKFold (5 folds): mean $\pm $ standard deviation across folds.}}{36}{table.caption.129}%
+\contentsline {table}{\numberline {4.9}{\ignorespaces Forensic analysis of the three false positives (best run).}}{37}{table.caption.135}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {A.1}{\ignorespaces Complete hyperparameter configuration used for the final model.}}{}{table.caption.143}%
+\contentsline {table}{\numberline {A.2}{\ignorespaces GroupKFold by recording, 5 folds --- summary statistics across folds.}}{}{table.caption.145}%
+\contentsline {table}{\numberline {A.3}{\ignorespaces Milestone runs of the project (test metrics on the protocol in force at each date).}}{}{table.caption.147}%
+\contentsline {table}{\numberline {A.4}{\ignorespaces First ablation study (single seed), before methodological correction.}}{}{table.caption.149}%

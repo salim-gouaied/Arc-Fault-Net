@@ -1,0 +1,164 @@
+\clearpage
+\chapter*{Annexe}
+\addcontentsline{toc}{chapter}{Annexe}
+\markboth{Annexe}{Annexe}
+
+\renewcommand{\thesection}{A.\arabic{section}}
+\setcounter{section}{0}
+
+\newcommand{\annexesection}[2]{%
+    \refstepcounter{section}%
+    \section*{\thesection\quad #1}%
+    \label{#2}%
+}
+
+\annexesection{Contrat de sortie du moteur d'extraction structurelle}{annexe:contrat-moteur-extraction}
+
+Le tableau~\ref{tab:annexe-rapport-extraction-sprint1} présente les principales sections du rapport d'extraction structurelle produit durant le Sprint 1.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4.2cm}|p{8.8cm}|}
+\caption{Contrat de sortie du moteur d'extraction structurelle}\label{tab:annexe-rapport-extraction-sprint1}\\
+\hline
+\textbf{Élément produit} & \textbf{Signification pour la migration} \\
+\hline
+Identité du projet & Permet de connaître la version Angular, le type d'environnement de travail et les outils utilisés. \\
+\hline
+Démarrage de l'application & Indique comment l'application est lancée et quelle stratégie d'initialisation est utilisée. \\
+\hline
+Routage & Sert à comprendre la navigation, les redirections, les routes protégées et les routes chargées à la demande. \\
+\hline
+Domaines fonctionnels & Aide à repérer les grandes parties métier candidates au futur découpage en micro-frontends. \\
+\hline
+Éléments partagés & Identifie les composants, services et éléments transverses à isoler ou mutualiser. \\
+\hline
+Dépendances internes & Met en évidence les couplages entre parties de l'application et les risques liés au découpage. \\
+\hline
+Intégration backend & Recense les appels aux API afin d'anticiper les dépendances entre front-end et services backend. \\
+\hline
+Sécurité & Distingue les zones publiques et protégées de l'application. \\
+\hline
+Gestion d'état & Identifie les mécanismes utilisés pour partager ou synchroniser les données dans l'application. \\
+\hline
+Complétude de l'analyse & Donne une indication sur la fiabilité et la couverture du rapport généré. \\
+\hline
+\end{longtable}
+\endgroup
+
+\annexesection{Contrat de sortie de l'agent de délimitation des domaines métier}{annexe:contrat-agent-domaines}
+
+Le tableau~\ref{tab:annexe-sortie-agent-domaines} présente les principaux éléments produits par l'agent de délimitation des domaines métier durant le Sprint 2.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4cm}|p{9.2cm}|}
+\caption{Contrat de sortie de l'agent de délimitation des domaines métier}\label{tab:annexe-sortie-agent-domaines}\\
+\hline
+\textbf{Élément produit} & \textbf{Rôle} \\
+\hline
+Domaines métier candidats & Identifient les grandes parties fonctionnelles détectées dans le monolithe. \\
+\hline
+Candidats Remote & Indiquent les domaines pouvant être transformés progressivement en micro-frontends. \\
+\hline
+Éléments partagés & Regroupent les composants, services, modèles ou éléments transverses à mutualiser. \\
+\hline
+Risques de couplage & Signalent les dépendances pouvant rendre une séparation plus difficile. \\
+\hline
+Découpages différés & Indiquent les domaines dont la migration doit être reportée. \\
+\hline
+Niveau de confiance & Évalue la fiabilité globale des frontières proposées. \\
+\hline
+\end{longtable}
+\endgroup
+
+\annexesection{Contrat de sortie de l'agent de conception du plan directeur de migration}{annexe:contrat-agent-plan-directeur}
+
+Le tableau~\ref{tab:annexe-sortie-agent-plan-directeur} présente les principaux éléments produits par l'agent de conception du plan directeur de migration durant le Sprint 2.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4cm}|p{9.2cm}|}
+\caption{Contrat de sortie de l'agent de conception du plan directeur de migration}\label{tab:annexe-sortie-agent-plan-directeur}\\
+\hline
+\textbf{Élément produit} & \textbf{Rôle} \\
+\hline
+Shell & Définit les responsabilités de l'application hôte, notamment le démarrage, le routage global et les fonctionnalités transverses. \\
+\hline
+Remotes & Décrit les domaines à migrer progressivement sous forme de micro-frontends. \\
+\hline
+Stratégie de routage & Précise les routes conservées par le Shell et les points d'entrée des Remotes. \\
+\hline
+Politique de partage & Identifie les éléments communs à mutualiser entre le Shell et les Remotes. \\
+\hline
+Ordre de migration & Propose une séquence de migration progressive et à faible risque. \\
+\hline
+Décisions architecturales & Justifient les choix retenus pour l'architecture cible. \\
+\hline
+Hypothèses et confiance & Indiquent les limites de la décision et le niveau de fiabilité du plan proposé. \\
+\hline
+\end{longtable}
+\endgroup
+
+\annexesection{Contrat de sortie de l'agent de génération de l'environnement de travail du projet et du Shell}{annexe:contrat-agent-workspace-shell}
+
+Le tableau~\ref{tab:annexe-sortie-agent-workspace-shell} présente les principaux éléments produits par l'agent de génération de l'environnement de travail du projet et du Shell durant le Sprint 3.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4cm}|p{9.2cm}|}
+\caption{Contrat de sortie de l'agent de génération de l'environnement de travail du projet et du Shell}\label{tab:annexe-sortie-agent-workspace-shell}\\
+\hline
+\textbf{Élément produit} & \textbf{Rôle} \\
+\hline
+Plan du Shell & Décrit le nom du Shell, les routes contrôlées, les Remotes montés, les entrées distantes et les expositions partagées. \\
+\hline
+Plan de l'environnement de travail du projet & Définit le nom de l'environnement de travail, les applications, la librairie partagée et les commandes d'initialisation. \\
+\hline
+Configuration de bootstrap & Référence les fichiers de démarrage du Shell, notamment le point d'entrée principal, la configuration applicative et les routes. \\
+\hline
+Fichiers générés & Liste les fichiers produits pour le Shell, la configuration Angular, les environnements et les fichiers de fédération. \\
+\hline
+Commandes CLI & Présente les commandes permettant de recréer ou d'initialiser la structure Angular générée. \\
+\hline
+Chemin de l'environnement de travail du projet & Indique l'emplacement physique dans lequel les fichiers sont écrits. \\
+\hline
+Erreurs et avertissements & Signalent les problèmes rencontrés lors de la génération, de la normalisation ou de l'écriture des fichiers. \\
+\hline
+\end{longtable}
+\endgroup
+
+\annexesection{Contrat de sortie de l'agent de génération des squelettes Remote}{annexe:contrat-agent-remote-skeletons}
+
+Le tableau~\ref{tab:annexe-sortie-agent-remote-skeletons} présente les principaux éléments produits par l'agent de génération des squelettes Remote durant le Sprint 3.
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|p{4cm}|p{9.2cm}|}
+\caption{Contrat de sortie de l'agent de génération des squelettes Remote}\label{tab:annexe-sortie-agent-remote-skeletons}\\
+\hline
+\textbf{Élément produit} & \textbf{Rôle} \\
+\hline
+Liste des Remotes & Décrit les applications Remote préparées, leurs noms de projet, leurs domaines et leurs routes de montage. \\
+\hline
+Fichiers générés & Liste les fichiers créés pour chaque Remote, notamment les fichiers de démarrage, de routes, de navigation, d'environnement et de fédération. \\
+\hline
+Projets intégrés & Indique les Remotes injectés dans la configuration globale de l'environnement de travail du projet. \\
+\hline
+Configuration des routes & Définit les routes locales et les points d'entrée exposés par chaque Remote. \\
+\hline
+Configuration de fédération & Prépare les fichiers nécessaires à l'exposition des routes Remote et à leur chargement par le Shell. \\
+\hline
+Chemin de l'environnement de travail du projet & Indique l'emplacement où les squelettes Remote sont écrits. \\
+\hline
+Erreurs et avertissements & Regroupe les erreurs de génération, d'intégration ou d'écriture détectées pendant l'exécution. \\
+\hline
+\end{longtable}
+\endgroup
+
+\renewcommand{\thesection}{\thechapter.\arabic{section}}

@@ -1,0 +1,130 @@
+\chapter{Detailed Experimental Records}
+\label{annexe:runs}
+
+\section{Full training configuration}
+
+\begin{table}[H]
+\centering
+\caption{Complete hyperparameter configuration used for the final model.}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Input (temporal branch) & $(4, 2\,048)$ derived channels \\
+\hline
+Input (spectral branch) & $(1, 65, 31)$ log-power STFT, $n_{\text{fft}}=128$, hop $=64$ \\
+\hline
+Branch widths & $32 \to 64 \to 128$ \\
+\hline
+Temporal kernels & $16, 8, 4$ (padding $k/2$), MaxPool(4) between blocks \\
+\hline
+Spectral kernels & $3 \times 3$, frequency-only MaxPool $(2,1)$ \\
+\hline
+Frequency groups kept & 4 (adaptive pooling), projected $512 \to 128$ \\
+\hline
+Sequence length after pooling & 64 positions per branch \\
+\hline
+Cross-attention & bidirectional, 4 heads, $d_k = 32$, residual + LayerNorm \\
+\hline
+SE reduction ratio & $r = 8$ \\
+\hline
+Classifier head & $128 \to 64 \to 32 \to 1$, BN + GELU, dropout $0.5 / 0.3$ \\
+\hline
+Optimizer & AdamW, lr $3\times10^{-4}$, weight decay $5\times10^{-4}$ \\
+\hline
+Scheduler & CosineAnnealingWarmRestarts \\
+\hline
+Loss & BCEWithLogitsLoss, \texttt{pos\_weight} from train labels \\
+\hline
+Batch / epochs / patience & 64 / up to 200 / 15 (validation F1) \\
+\hline
+Gradient clipping & max norm 0.5 \\
+\hline
+Total parameters & 315\,421 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Recording-level GroupKFold: per-fold details}
+
+Each fold holds out entire recordings (all cycles of given experiments). The strong inter-fold dispersion reflects the heterogeneity of the held-out conditions: folds whose test recordings resemble trained conditions are solved perfectly, while folds containing unique load/material combinations concentrate the errors.
+
+\begin{table}[H]
+\centering
+\caption{GroupKFold by recording, 5 folds --- summary statistics across folds.}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+ & \textbf{Accuracy} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{Specificity} \\
+\hline
+Mean & 93.37\% & 91.71\% & 97.24\% & 87.90\% & 97.95\% \\
+\hline
+Std.\ dev. & 8.12 & 10.21 & 5.22 & 15.33 & 3.95 \\
+\hline
+Best fold & 100.0\% & 100.0\% & 100.0\% & 100.0\% & 100.0\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Chronology of the main training runs}
+
+\begin{table}[H]
+\centering
+\caption{Milestone runs of the project (test metrics on the protocol in force at each date).}
+\renewcommand{\arraystretch}{1.25}
+\footnotesize
+\begin{tabular}{|l|l|c|c|r|}
+\hline
+\textbf{Date (2026)} & \textbf{Configuration} & \textbf{Accuracy} & \textbf{F1} & \textbf{Params} \\
+\hline
+Apr.\ 23 & V1, initial dataset (overfitted) & 100.0\% & 100.0\% & 337\,057 \\
+\hline
+May 4 & V1, combined dataset & 89.64\% & 88.66\% & 337\,057 \\
+\hline
+May 13 & Mini model & 89.14\% & 88.17\% & 85\,073 \\
+\hline
+May 22 & V1 + SE (reduced) & 95.52\% & 95.16\% & 320\,609 \\
+\hline
+May 26 & V1 + SE (best) & 96.38\% & 96.08\% & 344\,409 \\
+\hline
+June 8--9 & V2 baseline, gated fusion & 97.48--98.16\% & 97.25--98.05\% & 350\,693 \\
+\hline
+June 22--23 & V2 + SE + deep head & 97.67--98.83\% & 97.55--98.67\% & 364\,189 \\
+\hline
+June 26 & V2 + SE + deep + cross-attn. & 98.77\% & 98.68\% & 315\,421 \\
+\hline
+July 8--10 & Production validation (cross-attn.) & 98.22--98.83\% & 98.07--98.74\% & 301\,925--315\,421 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{First (flawed) ablation --- raw results}
+
+Reproduced for completeness; Section~\ref{sec:flawed-ablation} explains why the comparison between the full model and the ``no attention'' variant is methodologically invalid (two components removed at once, uncontrolled capacity, single seed).
+
+\begin{table}[H]
+\centering
+\caption{First ablation study (single seed), before methodological correction.}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|l|c|c|c|c|r|}
+\hline
+\textbf{Variant} & \textbf{Accuracy} & \textbf{F1} & \textbf{Recall} & \textbf{FP} & \textbf{Params} \\
+\hline
+V2 full (gated fusion) & 98.10\% & 97.92\% & 96.30\% & 3 & 350\,693 \\
+\hline
+No attention (fusion + gate removed) & 98.53\% & 98.40\% & 97.36\% & 4 & 251\,873 \\
+\hline
+No channel gate & 97.61\% & 97.40\% & 96.43\% & 12 & 317\,669 \\
+\hline
+Temporal branch only & 89.14\% & 87.58\% & 82.43\% & 44 & 60\,193 \\
+\hline
+Spectral branch only & 98.28\% & 98.15\% & 98.02\% & 13 & 167\,109 \\
+\hline
+Baseline CNN & 89.20\% & 88.48\% & 89.30\% & 95 & 60\,193 \\
+\hline
+\end{tabular}
+\end{table}

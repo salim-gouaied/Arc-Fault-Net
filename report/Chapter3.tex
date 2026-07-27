@@ -1,0 +1,442 @@
+\chapter{Proposed Solution: Data Pipeline and Arc-FaultNet Architecture}
+\label{chap:design}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+This chapter presents the design of the first pillar of the detection system introduced in Chapter~\ref{chap:presentation}: the single-cycle detector and the data infrastructure that supports it. Section~\ref{sec:overview} gives an overview of the processing chain. Section~\ref{sec:dataset} details the construction of the labeled dataset, from raw oscilloscope acquisitions to normalized, decimated single cycles --- a stage that concentrates a large part of the engineering effort and of the design decisions that condition generalization. Section~\ref{sec:architecture} describes the Arc-FaultNet architecture itself, and Section~\ref{sec:protocol} defines the evaluation protocol used in Chapter~\ref{chap:results}.
+
+\section{System overview}
+\label{sec:overview}
+
+Figure~\ref{fig:pipeline} summarizes the complete processing chain. Offline, controlled arc experiments are recorded on the laboratory bench; each recording is segmented into individual 50~Hz cycles, labeled automatically using the arc voltage channel as an oracle, normalized, decimated, and stored in a versioned dataset. Online (and during training), each 2\,048-point current cycle is expanded on the fly into two synchronized views --- four physics-informed temporal channels and one STFT spectrogram --- which the dual-branch network fuses into a per-cycle arc probability. In the target system, this per-cycle decision is the elementary evidence that the voting layer aggregates over the multi-cycle observation window.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    node distance=0.45cm and 0.55cm,
+    box/.style={draw, rounded corners=2pt, align=center, minimum height=0.85cm, inner sep=4pt},
+    stage/.style={box, fill=gray!10},
+    arrow/.style={-{Stealth[length=2.2mm]}},
+]
+\node[stage, minimum width=2.5cm] (acq) {Acquisition\\ 3 channels @ 1 MHz};
+\node[stage, right=of acq, minimum width=2.4cm] (seg) {Cycle\\ segmentation\\ (on $V_{\text{line}}$)};
+\node[stage, right=of seg, minimum width=2.4cm] (lab) {Oracle\\ labeling\\ (on $V_{\text{arc}}$)};
+\node[stage, right=of lab, minimum width=2.5cm] (norm) {Normalization\\ + decimation\\ $\to$ 102.4 kHz};
+\node[stage, right=of norm, minimum width=2.2cm] (ds) {Labeled\\ dataset\\ (10\,860 cycles)};
+
+\node[box, below=0.9cm of seg, minimum width=2.9cm] (feat) {Derived channels\\ $[I_{\text{n}},\,|\Delta I|,\,\text{TKEO},\,\text{RMS}_{\text{sl}}]$};
+\node[box, below=0.9cm of norm, minimum width=2.6cm] (stft) {STFT\\ $128/64$, log-power};
+\node[box, below=2.1cm of lab, minimum width=3.2cm, thick] (net) {\textbf{Arc-FaultNet}\\ dual branch + cross-attention};
+\node[box, right=1.0cm of net, minimum width=2.6cm] (dec) {$P(\text{arc})$ per cycle\\ $\to$ voting layer\\ (target system)};
+
+\draw[arrow] (acq) -- (seg);
+\draw[arrow] (seg) -- (lab);
+\draw[arrow] (lab) -- (norm);
+\draw[arrow] (norm) -- (ds);
+\draw[arrow] (ds.south) |- ($(feat.east)!0.5!(stft.west)+(0,0.62cm)$) -| (feat.north);
+\draw[arrow] (ds.south) |- ($(feat.east)!0.5!(stft.west)+(0,0.62cm)$) -| (stft.north);
+\draw[arrow] (feat.south) |- ([yshift=2mm]net.west);
+\draw[arrow] (stft.south) |- ([yshift=-2mm]net.east);
+\draw[arrow] (net) -- (dec);
+\end{tikzpicture}
+\caption{Overview of the processing chain: offline dataset construction (top) and per-cycle inference (bottom).}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Dataset construction}
+\label{sec:dataset}
+
+\subsection{Raw data acquisition}
+
+The raw signals are acquired with a Teledyne LeCroy oscilloscope at a sampling rate of 1~MHz during controlled arc fault experiments on the IJL bench. Each experiment records three simultaneous channels, whose roles are strictly separated (Table~\ref{tab:channels}).
+
+\begin{table}[H]
+\centering
+\caption{The three acquisition channels and their roles in the pipeline.}
+\label{tab:channels}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{|P{1.7cm}|p{4.6cm}|p{6.9cm}|}
+\hline
+\textbf{Channel} & \textbf{Signal} & \textbf{Role} \\
+\hline
+C1 & $V_{\text{line}}$ --- mains voltage (230 V, 50 Hz) & Segmentation anchor (stable, load-independent) \\
+\hline
+C2 & $V_{\text{arc}}$ --- arc voltage across the contact gap & \textbf{Labeling oracle} --- never used as model input \\
+\hline
+C3 & $I(t)$ --- line current through the load & \textbf{Primary signal} for detection \\
+\hline
+\end{tabular}
+\end{table}
+
+The experimental setup varies the \textbf{load configuration} (resistive, inductive, mixed, including real appliances such as a kettle, lamps and a power drill) and the \textbf{contact materials} (copper--copper, steel--copper, graphite) to ensure diversity. Arc faults are triggered by controlled electrode separation, and each recording captures many consecutive mains cycles. Two acquisition campaigns were conducted: a first campaign (March 2026, 26 experiment triplets) constituting the primary corpus, and a second campaign (May 2026) with different loads, used partly for training and partly as a held-out generalization test (Section~\ref{sec:merging}).
+
+\subsection{Cycle segmentation}
+
+Each recording is segmented into individual 50~Hz cycles using the mains voltage C1:
+
+\begin{enumerate}[itemsep=1pt]
+    \item \textbf{DC offset removal} --- the mean of C1 is subtracted;
+    \item \textbf{Band-pass filtering} (40--60~Hz) --- isolates the fundamental, removing the high-frequency arc noise that could create spurious zero crossings;
+    \item \textbf{Positive-going zero-crossing detection} --- each pair of consecutive crossings defines one complete cycle;
+    \item \textbf{Spacing validation} --- crossings must be $\approx 20\,000$ samples apart ($\pm 8\%$ tolerance), rejecting glitches and truncated cycles.
+\end{enumerate}
+
+\paragraph{Why segment on the voltage and not on the current?} The mains voltage is stable and load-independent: it crosses zero at the same 50~Hz rhythm regardless of the circuit state. The current, by contrast, shifts in phase and shape with the load (inductive loads delay it) and is precisely the signal that the arc distorts. Anchoring the segmentation on C1 guarantees consistent cycle boundaries whatever the load and the fault state --- segmenting on the distorted signal itself would make the windowing depend on the phenomenon to be detected.
+
+\subsection{Automatic labeling via the arc-voltage oracle}
+\label{sec:labeling}
+
+Manually labeling tens of thousands of cycles is impractical and error-prone. Instead, the arc voltage channel C2 serves as a \textbf{ground-truth oracle}: when an arc is active, a voltage drop (typically above 10~V) appears across the contact gap. For each cycle, the pipeline computes the \emph{arc ratio} --- the fraction of samples where $|V_{\text{arc}}| > V_{\text{th}}$ with $V_{\text{th}} = 10$~V --- and applies a three-zone rule:
+
+\begin{equation}
+\text{label} =
+\begin{cases}
+0 \;(\textsc{normal}) & \text{if } r \leq R_{\text{low}} \approx 0.05 \\
+\text{excluded} & \text{if } R_{\text{low}} < r < R_{\text{high}} \\
+1 \;(\textsc{arc}) & \text{if } r \geq R_{\text{high}} \approx 0.95
+\end{cases}
+\label{eq:labeling}
+\end{equation}
+
+The thresholds $R_{\text{low}}$ and $R_{\text{high}}$ are calibrated automatically from the histogram of arc ratios over all experiments, which is strongly bimodal: most cycles are fully normal ($r \approx 0$) or fully arcing ($r \approx 1$), with a sparse valley of \emph{transition} cycles in between, corresponding to arc ignition or extinction within the cycle.
+
+\paragraph{Why exclude the transition zone?} A cycle with an intermediate arc ratio (e.g.\ $r = 0.4$) superimposes normal and arc-affected current within a single window: its posterior probability $P(Y{=}1 \mid X)$ is close to $0.5$, and its label --- whichever is chosen --- is essentially noise. Including such samples would inject label noise into training and raise the empirical Bayes error of the dataset; discarding them enforces a \emph{margin condition}, in the spirit of large-margin classifiers, whereby only confidently-labeled samples shape the decision boundary. This exclusion concerns only training data preparation; at inference time every cycle is classified, and the handling of genuinely ambiguous transition cycles is precisely one of the motivations for the multi-cycle voting layer of the target system.
+
+\medskip
+
+Two properties of this oracle deserve emphasis: it is \textbf{objective} (a physical measurement, not a human judgment), and it is \textbf{laboratory-only} --- C2 requires instrumenting the arc gap itself, which is impossible in a deployed installation. The model therefore never sees C2 as an input; it learns to predict from the current alone what the oracle measures directly.
+
+\subsection{Per-cycle normalization}
+\label{sec:normalization}
+
+Each current cycle is independently z-score normalized:
+
+\begin{equation}
+\hat{x} = \frac{x - \mu_x}{\sigma_x}.
+\label{eq:zscore}
+\end{equation}
+
+The motivation is to neutralize a dangerous \emph{shortcut}. Different experiments use loads drawing very different currents (a kettle draws $\sim$10~A, an LED lamp $\sim$0.1~A). If certain high-current loads are over-represented in the arc class, an un-normalized model can correlate \emph{absolute amplitude} with the label --- a spurious association between a nuisance variable and the class, i.e.\ a dataset bias where $P_{\text{train}}(X \mid Y) \neq P_{\text{deploy}}(X \mid Y)$. Per-cycle normalization enforces \textbf{amplitude invariance} by construction: only the waveform \emph{morphology} (shape, discontinuities, harmonic content) carries discriminative information. This encodes a known invariance of the problem directly into the preprocessing, rather than hoping the network learns it from limited data. The compromise is explicit: the absolute current amplitude --- which does carry some information about the load --- is deliberately sacrificed, because amplitude is precisely the feature that does \emph{not} transfer from the laboratory bench to an unknown installation; morphology is kept, scale is given up.
+
+\subsection{Campaign merging and final dataset}
+\label{sec:merging}
+
+The two campaigns are merged into a single training corpus, with one deliberate exception: \textbf{20\% of the second campaign's cycles (368 cycles) are held out entirely} and never touched during training or model selection, providing a final inter-campaign generalization probe. Table~\ref{tab:dataset} summarizes the resulting dataset.
+
+\begin{table}[H]
+\centering
+\caption{Composition of the final labeled dataset.}
+\label{tab:dataset}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Property} & \textbf{Value} \\
+\hline
+Total labeled cycles & 10\,860 \\
+\hline
+\textsc{normal} cycles (label 0) & 5\,898 \\
+\hline
+\textsc{arc} cycles (label 1) & 4\,962 \\
+\hline
+Cycles from campaign 1 (March 2026) & 9\,386 \\
+\hline
+Cycles from campaign 2 (May 2026, 80\%) & 1\,474 \\
+\hline
+Held-out cycles (campaign 2, 20\%) & 368 \\
+\hline
+Stored format & $(N, 2, 2\,048)$: $[V_{\text{line}}, I]$, labels, metadata \\
+\hline
+\end{tabular}
+\end{table}
+
+Each sample carries metadata (experiment name, load type, cycle index, arc ratio), which enables the recording-level cross-validation of Section~\ref{sec:protocol} and the forensic error analysis of Chapter~\ref{chap:results}.
+
+\subsection{Decimation: from 1 MHz to 102.4 kHz}
+\label{sec:decimation}
+
+The stored cycles are downsampled from 20\,000 to \textbf{2\,048 points}, i.e.\ from 1~MHz to an effective rate of 102.4~kHz, using polyphase resampling (\texttt{resample\_poly}, up~$=64$, down~$=625$) with a Kaiser-windowed FIR anti-aliasing filter. Table~\ref{tab:decimation} summarizes the operation.
+
+\begin{table}[H]
+\centering
+\caption{Effect of the decimation stage.}
+\label{tab:decimation}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Parameter} & \textbf{Before} & \textbf{After} \\
+\hline
+Sampling rate & 1\,000\,000 Hz & 102\,400 Hz \\
+\hline
+Samples per 50 Hz cycle & 20\,000 & 2\,048 \\
+\hline
+Nyquist frequency & 500 kHz & 51.2 kHz \\
+\hline
+Memory per sample (2 ch., float32) & 160 KB & 16 KB \\
+\hline
+\end{tabular}
+\end{table}
+
+This is not merely a computational optimization but an \textbf{industrial design choice}:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Arc signatures live below $\sim$50 kHz.} The broadband arc noise is concentrated in the 2--50~kHz range \cite{dowalla2023,ning2024interp}; a Nyquist frequency of 51.2~kHz preserves the discriminative content, while the 50--500~kHz band of the original recordings contains essentially instrumentation noise;
+    \item \textbf{Embedded feasibility.} Industrial AFDDs run on microcontroller-class hardware; a 102.4~kHz acquisition is achievable with inexpensive ADCs and keeps the per-cycle tensors (4$\times$2\,048 temporal, 65$\times$31 spectral) within a small SRAM budget, whereas 1~MHz would demand high-speed converters and an order of magnitude more memory and compute;
+    \item \textbf{QA validation.} The decimation script generates systematic overlay plots (original vs.\ decimated waveforms) and spectral comparisons, confirming that the arc band is fully preserved and that only the empty upper band is removed.
+\end{itemize}
+
+\subsection{On-the-fly feature computation and data augmentation}
+\label{sec:augmentation}
+
+The stored data remain the raw 2-channel cycles; the model inputs (derived channels and STFT, described in Section~\ref{sec:architecture}) are computed \emph{on the fly} by the dataset loader. This keeps the stored dataset representation-agnostic --- feature definitions can evolve without regenerating the corpus, and the exact same corpus will feed the future memory-based expert.
+
+\medskip
+
+Two light augmentations are applied during training only, both chosen to preserve \textbf{physical realism}:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Temporal} (on raw signals, before feature derivation): amplitude scaling by a factor drawn in $[0.95, 1.05]$ per channel, matching the calibration uncertainty of current sensors; additive Gaussian noise at $0.005\,\sigma_{\text{channel}}$ ($\approx 46$~dB SNR), matching a realistic sensor noise floor;
+    \item \textbf{Spectral} (on STFT spectrograms): random masking of 1--3 consecutive frequency bins, replaced by the channel mean, inspired by SpecAugment \cite{park2019specaugment}.
+\end{itemize}
+
+No time warping, pitch shifting or cyclic permutation is used: arc signals are \emph{phase-locked} to the mains voltage, and any augmentation that breaks this phase relationship would generate samples outside the true data manifold, hurting generalization rather than helping it.
+
+\section{The Arc-FaultNet architecture}
+\label{sec:architecture}
+
+Arc-FaultNet is a dual-branch convolutional network with attention-based fusion, operating on a single 2\,048-point current cycle. Figure~\ref{fig:architecture} shows the complete architecture; the following subsections detail each component, the hypothesis behind its initial choice, and --- where a component was revised during the project --- the analysis and the trade-off that justified the revision. The architecture presented here is the final version (V2 with sequence-level cross-attention fusion); the iterative path that led to it is retraced in Chapter~\ref{chap:results}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt},
+    io/.style={box, fill=gray!10, thick},
+    arrow/.style={-{Stealth[length=2.2mm]}},
+]
+% ===== Input =====
+\node[io, minimum width=4.8cm, minimum height=1.0cm] (input) at (0,0) {Current cycle $I(t)$\\ $2\,048$ pts @ 102.4 kHz};
+
+% ===== Two views =====
+\node[box, minimum width=5.8cm, minimum height=1.5cm] (derived) at (-3.9,-2.15) {4 derived channels\\ $[I_{\text{norm}},\ |\Delta I|,\ \text{TKEO},\ \text{RMS}_{\text{slide}}]$\\ $(4 \times 2\,048)$};
+\node[box, minimum width=5.8cm, minimum height=1.5cm] (spec) at (3.9,-2.15) {log-power STFT\\ $n_{\text{fft}} = 128$, hop $= 64$\\ $(1 \times 65 \times 31)$};
+
+% ===== Branches =====
+\node[box, minimum width=6.2cm, minimum height=2.0cm] (tbranch) at (-3.9,-4.75) {\textbf{Temporal branch (1-D)}\\[2pt] 3 $\times$ [Conv1d $k = 16/8/4$\\ + BN + GELU + SE]\\ ch.\ $32 \to 64 \to 128$, pool $\to (128 \times 64)$};
+\node[box, minimum width=6.2cm, minimum height=2.0cm] (sbranch) at (3.9,-4.75) {\textbf{Spectral branch (2-D)}\\[2pt] FrequencyGate, 3 $\times$ [Conv2d $3{\times}3$\\ + BN + GELU + SE], freq-only pooling\\ 4 freq groups $\to (128 \times 64)$};
+
+% ===== Cross attention =====
+\node[box, minimum width=8.6cm, minimum height=1.7cm, thick] (xattn) at (0,-7.55) {\textbf{Bidirectional cross-attention} (4 heads, $d_k = 32$)\\[2pt] $Q_t \leftrightarrow K_s, V_s$ \quad and \quad $Q_s \leftrightarrow K_t, V_t$\\ + residual + LayerNorm, GAP $\to$ fused vector (128)};
+
+% ===== Head =====
+\node[box, minimum width=5.8cm, minimum height=1.5cm] (head) at (0,-10.0) {\textbf{Deep classifier head}\\[2pt] FC $128 \to 64 \to 32 \to 1$\\ (BN, GELU, dropout 0.5/0.3)};
+
+\node[io, minimum width=3.6cm, minimum height=0.9cm] (out) at (0,-11.85) {$\sigma(\cdot) \to P(\text{arc})$};
+
+% ===== Arrows =====
+\draw[arrow] (input.south) -- ++(0,-0.45) -| (derived.north);
+\draw[arrow] (input.south) -- ++(0,-0.45) -| (spec.north);
+\draw[arrow] (derived) -- (tbranch);
+\draw[arrow] (spec) -- (sbranch);
+\draw[arrow] (tbranch.south) -- ++(0,-0.5) -| ([xshift=-2.2cm]xattn.north);
+\draw[arrow] (sbranch.south) -- ++(0,-0.5) -| ([xshift=2.2cm]xattn.north);
+\draw[arrow] (xattn) -- (head);
+\draw[arrow] (head) -- (out);
+
+% Side annotations
+\node[gray, font=\scriptsize, anchor=west] at (0.35,-0.72) {two synchronized views};
+\node[gray, font=\scriptsize, anchor=west] at (4.5,-7.55) {detail:\ Fig.~\ref{fig:xattn-detail}};
+\end{tikzpicture}
+\caption{Arc-FaultNet architecture ($\approx$~315k parameters). Each branch analyzes one view of the same cycle; the bidirectional cross-attention aligns and fuses them before classification.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Input representation: four physics-informed channels}
+\label{sec:derived-channels}
+
+Rather than feeding the raw current alone, the temporal branch receives four channels derived from $I(t)$, each engineered to expose one known physical signature of the arc (Section~\ref{sec:signatures}); all are normalized by the cycle RMS to preserve physically meaningful relative magnitudes across loads.
+
+\begin{table}[H]
+\centering
+\caption{The four derived input channels of the temporal branch.}
+\label{tab:derived}
+\renewcommand{\arraystretch}{1.5}
+\small
+\begin{tabular}{|P{1.9cm}|P{3.6cm}|p{4.1cm}|p{3.6cm}|}
+\hline
+\textbf{Channel} & \textbf{Formula} & \textbf{Physical meaning} & \textbf{Frequency sensitivity} \\
+\hline
+$I_{\text{norm}}$ & $I(t)/\mathrm{RMS}(I)$ & Load-normalized waveform shape & Low frequency (fundamental + harmonics) \\
+\hline
+$|\Delta I|$ & $|I[n]-I[n-1]|$ & Sample-to-sample discontinuities (re-ignition spikes) & High-pass ($H(z) = 1-z^{-1}$) \\
+\hline
+TKEO & $I[n]^2 - I[n{-}1]\,I[n{+}1]$ & Teager--Kaiser instantaneous energy \cite{kaiser1990tkeo} (sub-cycle ignition/extinction events) & Broadband, nonlinear (AM and FM sensitive) \\
+\hline
+$\mathrm{RMS}_{\text{slide}}$ & $\sqrt{\mathrm{mean}_{M/4}(I^2)}$ & Amplitude envelope (flat shoulders, impedance dips), window $M/4$ & Low-frequency envelope \\
+\hline
+\end{tabular}
+\end{table}
+
+These channels encode complementary \textbf{physics-informed inductive biases}. The convolutional filters could in principle discover differential operators, energy operators and envelope extractors from the raw waveform alone --- but that would require far more data and capacity. Providing them explicitly is analogous to providing Gabor filter banks in classical vision: the network still learns \emph{how to combine} the features, but is relieved from learning \emph{what they are}. Together, the four channels form a multi-resolution decomposition of $I(t)$ well matched to arc signatures, which manifest at several temporal scales simultaneously.
+
+\subsection{Temporal branch}
+
+The temporal branch is a stack of three 1-D convolutional blocks with channel widths $32 \to 64 \to 128$ and decreasing kernel sizes $16 \to 8 \to 4$, each block comprising convolution, batch normalization, GELU activation and a squeeze-and-excitation module, with max-pooling (factor 4) between blocks. An adaptive average pooling brings the output to a fixed sequence of 64 positions, yielding a $(128 \times 64)$ feature map. Plain (untied) convolutions are used rather than Gabor-parametrized filters: the derived channels already encode the relevant frequency structure, so imposing an oscillatory prior on the filters is unnecessary --- a lesson from the V1 experiments retraced in Chapter~\ref{chap:results}.
+
+\subsection{Spectral branch}
+
+The spectral branch operates on the STFT of the current cycle, computed with $n_{\text{fft}} = 128$ and hop 64 (50\% overlap), producing a $65 \times 31$ log-power spectrogram. At $f_s = 102.4$~kHz this yields a frequency resolution of $\Delta f = f_s / n_{\text{fft}} = 800$~Hz and a temporal resolution of $\Delta t = n_{\text{fft}} / f_s = 1.25$~ms --- fine enough to resolve the low-order harmonics and short enough to localize sub-cycle arc ignition events (0.5--2~ms), a balanced operating point of the Heisenberg--Gabor trade-off.
+
+\medskip
+
+Two design choices differentiate this branch from a generic image CNN:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{FrequencyGate}: a learnable soft mask applied over the frequency axis at the input, $\tilde{S}(f,t) = \sigma(g(f)) \cdot S(f,t)$, implemented as a $(3 \times 1)$ convolution followed by a sigmoid. It acts as a \emph{learned band-pass filter}: the network discovers which frequency bins carry arc information and attenuates the others, performing feature selection inside the computation graph;
+    \item \textbf{Asymmetric pooling}: the max-pooling layers compress only the frequency axis ($2 \times 1$ kernels), preserving the time axis at full resolution. The final adaptive pooling keeps 4 frequency groups and 64 time positions, which are projected back to a $(128 \times 64)$ sequence. Preserving temporal resolution is essential for the fusion stage: it keeps the spectral features \emph{alignable} with the temporal branch positions.
+\end{itemize}
+
+The three convolutional blocks mirror the temporal branch ($3 \times 3$ kernels, widths $32 \to 64 \to 128$, BN + GELU + SE).
+
+\subsection{Fusion by bidirectional cross-attention}
+\label{sec:cross-attention}
+
+The fusion stage receives two synchronized sequences of 64 positions: $F_t \in \mathbb{R}^{128 \times 64}$ (temporal) and $F_s \in \mathbb{R}^{128 \times 64}$ (spectral). How to combine them is a design decision in its own right, and two candidate strategies were considered, each resting on a different hypothesis about \emph{where} the discriminative information lies:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Channel-level gated fusion on pooled descriptors.} Each branch is first pooled into a global vector; two sigmoid gates, conditioned on both vectors, rescale each branch channel-wise before concatenation and projection. Underlying hypothesis: \emph{the global summary of each branch is individually sufficient, and only the relative weighting of the two branches needs to adapt to the input}. Its assets are minimal computation and low risk in a small-data regime --- which is why it was the fusion adopted in the first version of V2.
+    \item \textbf{Sequence-level cross-attention before pooling.} The unpooled sequences attend to each other position by position. Underlying hypothesis: \emph{part of the evidence is carried by the time-localized co-occurrence of events across the two views} (a waveform discontinuity and a broadband burst at the same instant) --- information that pooling irreversibly erases before a gated fusion can ever see it.
+\end{itemize}
+
+The two hypotheses were arbitrated empirically: the error analysis of Chapter~\ref{chap:results} (Section~\ref{sec:phase6}) showed that the residual errors of the gated variant were concentrated precisely where the second hypothesis predicted, and the controlled comparison confirmed the gain. The retained mechanism is therefore the \textbf{scaled dot-product cross-attention} \cite{vaswani2017attention} applied at the sequence level, in both directions:
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right) V,
+\label{eq:attention}
+\end{equation}
+
+where, for the temporal-to-spectral direction, $Q = W_Q F_t$, $K = W_K F_s$, $V = W_V F_s$ (and symmetrically for the spectral-to-temporal direction). The implementation uses 4 attention heads with a total key dimension $d_k = 32$; each direction is followed by a residual connection and layer normalization, then global average pooling over positions and a final linear fusion produce the 128-dimensional embedding. Figure~\ref{fig:xattn-detail} details the complete data flow of the module.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.97\textwidth}{!}{%
+\begin{tikzpicture}[
+    font=\scriptsize,
+    box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt},
+    feat/.style={box, thick, fill=gray!12, minimum height=0.85cm},
+    proj/.style={box, minimum width=1.35cm, minimum height=0.65cm},
+    op/.style={box, fill=gray!25, minimum height=0.8cm},
+    arrow/.style={-{Stealth[length=2mm]}},
+    xarrow/.style={arrow, densely dashed},
+]
+% ===== Input sequences (before any pooling) =====
+\node[feat, minimum width=4.4cm] (ft) at (2.5,0) {Temporal sequence $F_t$\\ $(B,\, C{=}128,\, T{=}64)$};
+\node[feat, minimum width=4.4cm] (fs) at (11.9,0) {Spectral sequence $F_s$\\ $(B,\, C{=}128,\, T{=}64)$};
+
+% ===== Q/K/V projections (1x1 convolutions) =====
+\node[proj] (qt) at (0.9,-1.7) {$Q_t$};
+\node[proj] (kt) at (2.5,-1.7) {$K_t$};
+\node[proj] (vt) at (4.1,-1.7) {$V_t$};
+\node[proj] (vs) at (10.3,-1.7) {$V_s$};
+\node[proj] (ks) at (11.9,-1.7) {$K_s$};
+\node[proj] (qs) at (13.5,-1.7) {$Q_s$};
+\node[gray, font=\tiny, anchor=east] at (0.15,-1.7) {$1{\times}1$ conv};
+\node[gray, font=\tiny, anchor=west] at (14.25,-1.7) {$1{\times}1$ conv};
+
+\draw[arrow] ([xshift=-1.6cm]ft.south) -- (qt.north);
+\draw[arrow] (ft.south) -- (kt.north);
+\draw[arrow] ([xshift=1.6cm]ft.south) -- (vt.north);
+\draw[arrow] ([xshift=1.6cm]fs.south) -- (qs.north);
+\draw[arrow] (fs.south) -- (ks.north);
+\draw[arrow] ([xshift=-1.6cm]fs.south) -- (vs.north);
+
+% ===== Bidirectional multi-head attention =====
+\node[op, minimum width=6.0cm] (attnT) at (3.4,-3.6) {\textbf{Multi-head attention} (4 heads)\\ $\mathrm{softmax}\big(Q_t K_s^{\top}/\sqrt{d_k}\big)\, V_s$};
+\node[op, minimum width=6.0cm] (attnS) at (11.0,-3.6) {\textbf{Multi-head attention} (4 heads)\\ $\mathrm{softmax}\big(Q_s K_t^{\top}/\sqrt{d_k}\big)\, V_t$};
+\node[gray, font=\tiny, align=center] at (7.2,-4.6) {$\boldsymbol{\alpha} \in \mathbb{R}^{T \times T}$ per head:\\ instant $t_i$ of one view $\to$ instant $t_j$ of the other};
+
+\draw[arrow] (qt.south) -- ([xshift=-2.5cm]attnT.north);
+\draw[xarrow] (ks.south) -- ([xshift=1.2cm]attnT.north);
+\draw[xarrow] (vs.south) -- ([xshift=2.2cm]attnT.north);
+\draw[arrow] (qs.south) -- ([xshift=2.5cm]attnS.north);
+\draw[xarrow] (kt.south) -- ([xshift=-1.2cm]attnS.north);
+\draw[xarrow] (vt.south) -- ([xshift=-2.2cm]attnS.north);
+
+% ===== Add & LayerNorm with residuals =====
+\node[op, minimum width=3.6cm] (anT) at (2.5,-5.6) {Add \& LayerNorm};
+\node[op, minimum width=3.6cm] (anS) at (11.9,-5.6) {Add \& LayerNorm};
+\draw[arrow] (attnT.south) -- (anT.north);
+\draw[arrow] (attnS.south) -- (anS.north);
+\draw[arrow] (ft.west) -- ++(-0.5,0) |- (anT.west) node[pos=0.25, rotate=90, above, gray, font=\tiny] {residual};
+\draw[arrow] (fs.east) -- ++(0.5,0) |- (anS.east) node[pos=0.25, rotate=90, below, gray, font=\tiny] {residual};
+
+% ===== GAP =====
+\node[op, minimum width=2.4cm] (gapT) at (2.5,-6.8) {GAP over $T$};
+\node[op, minimum width=2.4cm] (gapS) at (11.9,-6.8) {GAP over $T$};
+\draw[arrow] (anT) -- (gapT);
+\draw[arrow] (anS) -- (gapS);
+
+% ===== Concat + fusion =====
+\node[op, minimum width=3.2cm] (cat) at (7.2,-7.9) {Concat $(B,\, 2C)$};
+\draw[arrow] (gapT.south) |- (cat.west);
+\draw[arrow] (gapS.south) |- (cat.east);
+\node[op, minimum width=4.6cm] (fus) at (7.2,-9.0) {Fusion: Linear $2C \to C$ + GELU};
+\draw[arrow] (cat) -- (fus);
+\node[feat, minimum width=3.8cm] (emb) at (7.2,-10.15) {Fused embedding $(B,\, 128)$};
+\draw[arrow] (fus) -- (emb);
+\end{tikzpicture}%
+}
+\caption{Detailed data flow of the bidirectional cross-attention fusion module. Both branch outputs are intercepted \emph{before} pooling, keeping their temporal dimension $T = 64$; $1{\times}1$ convolutions project them into queries, keys and values; each branch's queries attend to the other branch's keys/values (dashed arrows mark the cross-branch paths); residual connections and layer normalization stabilize training before pooling and fusion.}
+\label{fig:xattn-detail}
+\end{figure}
+
+The essential property of this mechanism is that it is \textbf{position-dependent and content-based}: for each head, the attention matrix $\boldsymbol{\alpha} \in \mathbb{R}^{T \times T}$ expresses how much instant $t_i$ in one view should attend to instant $t_j$ in the other, so the temporal features at position $t_0$ can query the spectral frames around $t_0$ (or anywhere else) to check, for example, whether a waveform discontinuity coincides with a broadband spectral burst (arc) or with a narrow harmonic line (load transient). This is exactly the capability that the pooled-gating alternative structurally lacks --- its \emph{temporal bottleneck}: pooling destroys the time axis before fusion, so branch contributions can only be rescaled globally and no event-to-event correlation can be expressed. The multi-head structure adds a further degree of freedom: each of the 4 heads can specialize in a different cross-view correlation pattern (e.g.\ strictly simultaneous bursts vs.\ short lead/lag relationships between a discontinuity and its spectral echo).
+
+\paragraph{The terms of the trade.} The revision is not free, and its balance sheet was stated before adoption. On the gains side: position-wise cross-domain alignment --- measured in Chapter~\ref{chap:results} as a $+1.85$-point recall improvement at equal training conditions --- and, counter-intuitively, a \emph{smaller} model: the shared $1 \times 1$ Q/K/V projections replace dense gating layers, removing $\approx$~48k parameters ($\approx$~15\%, from 364k to 315k in the full configuration). On the costs side: an attention computation quadratic in the sequence length ($T \times T$ score matrices per head and per direction --- modest at $T = 64$, but a non-zero term in an embedded budget where the gated fusion was essentially free); and a mechanism that the literature reports as data-hungry, a genuine risk on a $\approx$~10k-cycle corpus. This risk is deliberately mitigated in the design: a small key dimension ($d_k = 32$), a single fusion layer rather than a stack, and the residual + LayerNorm path, which lets the module degrade gracefully toward branch-independent behavior whenever attention finds nothing to align.
+
+\subsection{Squeeze-and-excitation blocks and classification head}
+
+Each convolutional block of both branches is followed by a squeeze-and-excitation module \cite{hu2018squeeze}:
+
+\begin{equation}
+\mathbf{s} = \sigma\big(W_2 \cdot \mathrm{ReLU}(W_1 \cdot \mathrm{GAP}(\mathbf{F}))\big), \qquad \tilde{\mathbf{F}}_c = s_c \cdot \mathbf{F}_c,
+\label{eq:se}
+\end{equation}
+
+with a bottleneck ratio $r = 8$. The SE blocks implement an input-conditioned soft mask over channels --- amplifying filters that respond to arc-relevant patterns in the current sample and suppressing the others --- at a cost of only $2C^2/r$ parameters per block. As Chapter~\ref{chap:results} shows, their measured benefit is less about peak accuracy than about \emph{stability}: they substantially reduce the run-to-run variance across random seeds.
+
+\medskip
+
+The fused embedding is classified by a three-layer head, $128 \to 64 \to 32 \to 1$, with batch normalization, GELU activations and progressive dropout ($0.5$ then $0.3$). The single output logit feeds a sigmoid, and the network is trained with the binary cross-entropy loss on logits, weighted by the inverse class frequency (\texttt{pos\_weight}) to compensate the slight class imbalance of Table~\ref{tab:dataset}. The complete model totals $\approx$~\textbf{315\,000 parameters} ($\sim$1.2~MB in float32), compatible with microcontroller-class deployment after quantization.
+
+\section{Evaluation protocol}
+\label{sec:protocol}
+
+\subsection{Metrics}
+
+With TP, TN, FP, FN the entries of the confusion matrix (\textsc{arc} being the positive class), the reported metrics are:
+
+\begin{equation}
+\mathrm{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}, \qquad
+\mathrm{Precision} = \frac{TP}{TP + FP},
+\end{equation}
+\begin{equation}
+\mathrm{Recall} = \frac{TP}{TP + FN}, \qquad
+F_1 = \frac{2 \cdot \mathrm{Precision} \cdot \mathrm{Recall}}{\mathrm{Precision} + \mathrm{Recall}}.
+\end{equation}
+
+The two error types are not symmetric for an AFDD: a \textbf{false negative} is a missed fire hazard, while a \textbf{false positive} is a nuisance trip that undermines the product's acceptability. Recall and precision are therefore always reported alongside accuracy, and Chapter~\ref{chap:results} analyzes every false positive individually.
+
+\subsection{Three complementary validation protocols}
+
+\begin{enumerate}[itemsep=2pt]
+    \item \textbf{Stratified random split (70/15/15)} with multi-seed repetitions: measures in-distribution performance and, through the dispersion across seeds, the \emph{stability} of the training procedure. Model selection (early stopping) uses the validation split only;
+    \item \textbf{GroupKFold at the recording level} (5 folds): all cycles of a given experiment --- same load, same electrode material, same session --- are assigned to the same fold, so each test fold contains only \emph{recordings never seen in training}. This is the laboratory proxy for deployment on unknown conditions, directly probing the generalization objective of the project;
+    \item \textbf{Inter-campaign holdout}: the 368 cycles of the second campaign excluded in Section~\ref{sec:merging} form a final probe, evaluated only once the architecture is frozen.
+\end{enumerate}
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+This chapter presented the two engineering artifacts at the core of the project: a data pipeline that converts raw laboratory recordings into a clean, oracle-labeled, embedded-realistic dataset of 10\,860 single cycles, and Arc-FaultNet, a $\approx$~315k-parameter dual-branch network whose physics-informed inputs, frequency gating and bidirectional cross-attention are each justified by a property of the arc phenomenon. Every design decision --- segmenting on the voltage, excluding transition cycles, normalizing per cycle, decimating to 102.4~kHz, preserving temporal resolution in the spectral branch --- traces back to either a physical argument or a generalization argument. The next chapter shows how this design emerged from an iterative experimental process, and what it delivers.

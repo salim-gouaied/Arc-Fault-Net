@@ -1,0 +1,43 @@
+\chapter*{General Introduction}
+\addcontentsline{toc}{chapter}{General Introduction}
+
+\noindent\rule{\linewidth}{1pt}
+\vspace{0.3cm}
+
+Electrical safety in residential installations has been a major industry concern for many years. Among the faults that must be detected, series arc faults represent a particularly insidious threat: they typically originate from a damaged cable, a loose terminal or a degraded contact, and they release a highly localized thermal energy capable of igniting surrounding materials. Unlike short circuits or earth-leakage faults, a series arc does not increase the line current --- the arc is in series with the load, which keeps the current bounded below the nominal value. Conventional protection devices (circuit breakers, residual current devices) are therefore structurally blind to this phenomenon, and dedicated Arc Fault Detection Devices (AFDD), specified in Europe by the IEC~62606 standard, remain the only line of defense.
+
+\medskip
+
+Detecting a series arc from the line current alone is a difficult pattern recognition problem. The arc signature --- waveform distortion, re-ignition spikes around the current zero crossings, broadband high-frequency noise --- is superimposed on a signal whose shape is dominated by the connected load. A dimmer, a switched-mode power supply or a power drill can produce patterns that closely resemble an arc, while a resistive load in series with an arc can hide most of its distortion. As a consequence, detection methods tuned on a given set of laboratory experiments often fail to generalize to unseen loads and environments, and suffer from false alarms (nuisance tripping) that are commercially unacceptable for a protection device.
+
+\medskip
+
+This final-year engineering project, carried out over six months within the \emph{Measurements and Electronic Architectures} team of the Institut Jean Lamour (Université de Lorraine, Nancy), addresses this challenge with a data-driven approach. Its objective is to design a \textbf{generalizable multimodal detection system} --- one that performs as reliably on unseen domestic conditions as on the laboratory bench. A key observation drives the system architecture: in the real world, an arc fault is not a single-cycle event but a phenomenon that unfolds and fluctuates over several consecutive mains cycles, and the applicable standard tolerates a reaction time of several cycles (up to eight in our design target) before tripping. The target system therefore does not rest on one classifier but on the \emph{vote} of several complementary experts observing the same window: an instantaneous detector that recognizes the arc signature within each individual cycle, a memory-based sequence model (e.g.\ a state space model) that recognizes the temporal pattern of arc occurrence across cycles, and possibly a third expert, their decisions being merged by a voting layer into the final trip/no-trip decision.
+
+\medskip
+
+This report presents the work completed to date, namely the design and validation of the system's first pillar: \emph{Arc-FaultNet}, the single-cycle detector. It jointly analyzes the current in the time domain, through physics-informed derived channels, and in the time--frequency domain, through the STFT spectrogram, and fuses both representations with a cross-attention mechanism. Beyond the architecture itself, this pillar covers the complete engineering chain that the whole system will rest on: acquisition campaigns on a dedicated arc generation bench, automatic labeling using the arc voltage as a laboratory oracle, signal conditioning and decimation driven by embedded-deployment constraints, iterative model design guided by failure analysis, and a rigorous evaluation methodology (multi-seed runs, component-wise ablation, recording-level cross-validation).
+
+\medskip
+
+A deliberate emphasis is placed throughout this report on the \emph{engineering process} rather than on the final figures alone: how a misleading result was diagnosed as overfitting, how a bias--variance analysis redirected the effort from model capacity to representation quality, how a methodologically flawed ablation study was detected and corrected, and how the residual failure cases motivate the next evolution of the system towards a multi-cycle, memory-based decision strategy.
+
+\vspace{0.6cm}
+\noindent\rule{\linewidth}{0.4pt}
+\vspace{0.2cm}
+
+\noindent\textbf{Report outline}
+
+\vspace{0.3cm}
+
+\noindent This report is organized in four chapters:
+
+\begin{itemize}[leftmargin=1.8cm, itemsep=3pt, topsep=4pt]
+    \item \textbf{Chapter 1 -- Project presentation and theoretical background:} introduces the host laboratory, the project context, the problem statement and the proposed solution, then presents the physical and machine learning concepts required to follow the rest of the report.
+    \item \textbf{Chapter 2 -- State of the art:} reviews the recent literature on series arc fault detection, from descriptor-based classifiers to lightweight end-to-end neural networks and attention-based architectures, and positions our contribution with respect to these works.
+    \item \textbf{Chapter 3 -- Proposed solution:} details the design of the system, from the data engineering pipeline (acquisition, segmentation, oracle-based labeling, normalization, decimation) to the Arc-FaultNet architecture and the evaluation protocol.
+    \item \textbf{Chapter 4 -- Implementation and results:} describes the working environment, retraces the iterative experimental journey with its diagnoses and corrections, presents the ablation studies, the generalization measurements and the forensic analysis of the residual errors.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\rule{\linewidth}{1pt}

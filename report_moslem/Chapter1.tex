@@ -1,0 +1,305 @@
+
+\chapter{Cadre général et fondements du projet}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Dans ce chapitre, nous présentons le cadre général du projet, son contexte professionnel, organisationnel et technologique. Nous présentons également l'entreprise d'accueil, le département dans lequel le stage a été réalisé, le contexte ayant motivé le sujet, puis les fondements nécessaires à la compréhension de la solution proposée.
+
+\section{Présentation de l'entreprise d'accueil}
+
+Dans cette section, nous présentons l'entreprise d'accueil Talan Tunisie Consulting, ses principaux secteurs d'activité, le département Tech et Cloud ainsi que le bootcamp d'intégration suivi au début du stage. Cette présentation permet de situer le projet dans son environnement professionnel et de mieux comprendre le cadre dans lequel il a été réalisé.
+
+\subsection{Talan Tunisie Consulting}
+
+Talan est un groupe international de conseil et d'expertise technologique fondé en 2002. Il accompagne les entreprises et les institutions publiques dans leurs projets de transformation digitale, d'innovation et d'amélioration de leurs processus métier \cite{talan_org}. Son activité se situe à l'intersection du conseil, de l'ingénierie logicielle, de la data, du cloud et de l'accompagnement des organisations dans l'évolution de leurs systèmes d'information.
+
+Le groupe est présent sur cinq continents et dans 21 pays. Il s'appuie sur plusieurs centres d'excellence, notamment à Tunis, Luxembourg, Île Maurice, Hongrie, Espagne, Pologne et Mexique. Cette organisation internationale lui permet de combiner proximité client, expertise technologique et capacité de réalisation à distance, selon les besoins de chaque mission \cite{talan_org}.
+
+Talan compte plus de 7\,000 collaborateurs. En 2024, le groupe a réalisé un chiffre d'affaires de 850 millions d'euros et vise à dépasser le milliard d'euros à l'horizon 2026 \cite{talan_org}. Au-delà de sa croissance, l'entreprise met en avant une culture orientée vers l'humain, l'apprentissage continu et l'innovation, comme l'illustrent ses reconnaissances Great Place To Work \cite{gptw_talan}.
+
+Talan Tunisie s'inscrit dans cette dynamique globale. Elle constitue un pôle d'expertise important pour la réalisation de projets technologiques, l'accompagnement des clients internationaux et le développement de solutions logicielles répondant à des problématiques métier variées. Le contexte de travail offert par cette structure a été particulièrement adapté à un projet de fin d'études portant sur l'architecture logicielle, l'automatisation et la modernisation d'applications existantes.
+
+\subsection{Secteurs d'activité}
+
+Talan intervient dans plusieurs secteurs d'activité, notamment l'énergie, le transport et la logistique, la banque et la finance, l'industrie, l'assurance et le service public \cite{talan_secteurs}. Ces secteurs ont des besoins différents, mais ils partagent souvent des enjeux communs : moderniser des applications existantes, améliorer la maintenabilité, accélérer la livraison de nouvelles fonctionnalités et réduire les risques liés aux évolutions techniques.
+
+Afin de mieux présenter la diversité des domaines d'intervention de Talan, le tableau~\ref{tab:secteurs-talan} regroupe quelques secteurs représentatifs ainsi que les enjeux généralement associés à chacun d'eux.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{3.6cm}|p{10.4cm}|}
+\caption{Exemples de secteurs couverts par Talan et enjeux associés}\label{tab:secteurs-talan}\\
+\hline
+\textbf{Secteur} & \textbf{Enjeux généralement adressés} \\
+\hline
+Énergie & Transformation des systèmes, suivi de la performance, intégration de solutions numériques et optimisation des processus opérationnels. \\
+\hline
+Transport et logistique & Amélioration de la planification, fiabilisation des flux, modernisation des plateformes et meilleure exploitation des données. \\
+\hline
+Banque et finance & Évolution des services digitaux, sécurisation des applications, automatisation des processus et amélioration de l'expérience utilisateur. \\
+\hline
+Industrie & Digitalisation des chaînes de valeur, suivi des indicateurs, intégration de systèmes et amélioration de la qualité logicielle. \\
+\hline
+Assurance & Modernisation des parcours clients, simplification des outils internes et meilleure interconnexion des services. \\
+\hline
+Service public & Transformation numérique, rationalisation des démarches et amélioration de l'accessibilité des services. \\
+\hline
+\end{longtable}
+\endgroup
+
+Cette diversité sectorielle montre que les projets confiés à Talan ne se limitent pas à la mise en place d'outils techniques. Ils impliquent aussi une compréhension du contexte métier, des contraintes de maintenance, des exigences de sécurité et des objectifs de transformation propres à chaque organisation. Dans ce type d'environnement, les architectures logicielles jouent un rôle essentiel, car elles conditionnent la capacité d'un système à évoluer durablement.
+
+\subsection{Département Tech et Cloud}
+
+Le projet a été réalisé au sein du département \textbf{Tech et Cloud} de Talan Tunisie. Ce département intervient sur des missions liées au développement logiciel, à l'architecture applicative, au cloud computing, à l'industrialisation des processus de développement et à la modernisation des systèmes existants. Il accompagne les clients dans la conception de solutions plus fiables, maintenables et adaptées aux contraintes de production.
+
+Ses activités couvrent plusieurs dimensions complémentaires. La première concerne la conception et le développement d'applications, avec une attention particulière portée à la qualité du code, à la structuration des projets et à la cohérence des choix techniques. La deuxième dimension concerne l'architecture, c'est-à-dire la manière d'organiser les composants logiciels, les échanges, les dépendances et les mécanismes de déploiement. La troisième dimension est liée au cloud et au DevOps, avec des pratiques orientées automatisation, intégration continue, déploiement continu et observabilité.
+
+Ce cadre a été pertinent pour notre sujet, car la migration d'une application front-end monolithique vers une architecture plus modulaire ne relève pas uniquement du développement. Elle demande également une réflexion d'architecture, une capacité d'analyse du code existant, une maîtrise de l'automatisation et une attention particulière à la validation du résultat. Le département Tech et Cloud a donc fourni un environnement cohérent avec les exigences du projet.
+
+\subsection{Bootcamp d'intégration}
+
+Au début du stage, nous avons participé à un bootcamp d'intégration de deux semaines. Cette phase avait pour objectif de faciliter l'entrée dans l'environnement de Talan, de renforcer les compétences nécessaires au projet et d'introduire plusieurs notions liées à l'utilisation de l'intelligence artificielle dans le cycle de vie logiciel.
+
+La première semaine était consacrée à l'intégration de l'intelligence artificielle dans les différentes phases du développement logiciel. Les travaux abordés concernaient notamment la génération de code, l'aide à la documentation, l'automatisation des tests, l'assistance à la revue de code et l'intégration de ces pratiques dans des pipelines de développement. Cette partie a permis de comprendre l'intérêt de l'IA comme levier d'accélération, mais aussi les précautions nécessaires en matière de qualité, de sécurité et de contrôle.
+
+La deuxième semaine portait sur les systèmes Agentic AI et multi-agents. L'accent a été mis sur l'orchestration des tâches, la spécialisation des agents, la validation des sorties, la gestion du contexte, l'observabilité et la maîtrise des droits d'accès. Cette partie a été directement utile pour notre projet, car la solution proposée repose sur une orchestration de plusieurs traitements spécialisés, coordonnés autour d'un objectif commun : produire une migration fiable et exploitable.
+
+Pour clarifier l'apport de cette phase d'intégration, le tableau~\ref{tab:bootcamp-apports} présente une synthèse des deux semaines du bootcamp et de leur contribution directe au projet.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{3.2cm}|p{5.5cm}|p{5.5cm}|}
+\caption{Apports du bootcamp par rapport au projet}\label{tab:bootcamp-apports}\\
+\hline
+\textbf{Période} & \textbf{Contenu principal} & \textbf{Apport pour le projet} \\
+\hline
+Semaine 1 & IA appliquée au cycle de vie du développement logiciel & Compréhension de l'utilisation de l'IA pour assister l'analyse, la génération, les tests et la documentation. \\
+\hline
+Semaine 2 & Systèmes Agentic AI et orchestration multi-agents & Préparation à la conception d'un pipeline composé d'étapes spécialisées, contrôlées et validées progressivement. \\
+\hline
+\end{longtable}
+\endgroup
+
+Ce bootcamp n'a pas remplacé le travail de conception du projet, mais il a fourni une base méthodologique et technique. Il a permis de mieux identifier les points sensibles d'un système automatisé : la définition des responsabilités, la transmission des informations entre étapes, la limitation des erreurs et la nécessité de produire des résultats vérifiables.
+
+\section{Présentation du projet}
+
+Dans cette section, nous présentons le contexte du projet, le constat initial, la problématique, les objectifs ainsi que le périmètre retenu. Cette présentation permet de clarifier le besoin traité, de situer les difficultés rencontrées et de préciser les limites de la solution proposée.
+
+\subsection{Contexte du projet}
+
+Le projet s'inscrit dans une démarche de modernisation d'une application front-end Angular initialement organisée sous forme monolithique. Dans ce type de contexte, l'application peut devenir progressivement difficile à faire évoluer lorsque le nombre de fonctionnalités augmente, lorsque plusieurs intervenants doivent travailler sur le même code ou lorsque les dépendances internes deviennent nombreuses.
+
+L'objectif du stage n'était pas de réaliser une simple application Angular ni de concevoir manuellement une architecture cible. Le besoin portait sur l'automatisation du processus de transformation : partir d'un projet existant, analyser sa structure, proposer un découpage cohérent, générer une nouvelle organisation et produire un résultat utilisable par un développeur. Les définitions détaillées des architectures concernées sont donc volontairement placées dans l'état de l'art, tandis que cette section précise uniquement le contexte opérationnel du projet.
+
+Le point de départ est un projet Angular monolithique exécutable. Il contient des composants, des routes, des services, des dépendances, des styles et des éléments partagés. Le point d'arrivée attendu est un projet organisé selon une architecture micro-frontend, avec une application principale et plusieurs sous-applications. Entre ces deux états, plusieurs décisions doivent être prises : quelles parties regrouper, quelles dépendances partager, quelles routes déplacer et comment vérifier que le projet généré reste cohérent.
+
+\subsection{Constat initial}
+
+Avant de définir la solution, un constat a été établi à partir des difficultés généralement rencontrées lors de la modernisation d'applications front-end existantes. Une migration manuelle demande beaucoup de temps, car elle oblige le développeur à parcourir la structure du projet, comprendre les liens entre fichiers, identifier les dépendances, déplacer les éléments et adapter les configurations. Chaque étape peut introduire des erreurs difficiles à détecter tardivement.
+
+Afin de structurer ce constat, le tableau~\ref{tab:constat-projet} présente les principaux problèmes identifiés ainsi que leurs conséquences sur le processus de migration.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{4cm}|p{10cm}|}
+\caption{Constats ayant motivé le projet}\label{tab:constat-projet}\\
+\hline
+\textbf{Constat} & \textbf{Conséquence sur la migration} \\
+\hline
+Taille croissante du code front-end & L'analyse manuelle devient plus longue et plus exposée aux oublis. \\
+\hline
+Dépendances internes nombreuses & Le déplacement d'un composant ou d'un service peut provoquer des erreurs indirectes. \\
+\hline
+Routage centralisé & La séparation des parcours fonctionnels demande une adaptation rigoureuse. \\
+\hline
+Manque de traçabilité & Il devient difficile de justifier les choix de migration sans documentation générée. \\
+\hline
+Validation tardive & Les erreurs détectées uniquement à la fin du processus coûtent plus cher à corriger. \\
+\hline
+\end{longtable}
+\endgroup
+
+Ces constats montrent que le problème ne se limite pas au déplacement de fichiers. Il concerne l'ensemble de la chaîne de transformation, depuis la compréhension de l'application source jusqu'à la vérification du projet produit.
+
+\subsection{Problématique}
+
+La transformation d'une application Angular monolithique en architecture micro-frontend ne consiste pas seulement à séparer le code en plusieurs projets. Elle nécessite d'analyser l'existant, d'identifier des domaines fonctionnels cohérents, de définir une architecture cible, puis de migrer correctement les composants, les services, les routes, les dépendances et les mécanismes de communication.
+
+La difficulté principale réside dans la maîtrise de cette chaîne de transformation. Un découpage mal défini peut produire une architecture trop fragmentée, difficile à maintenir, ou au contraire une architecture trop proche du monolithe initial. Une configuration incomplète peut aussi empêcher le build ou l'exécution du projet généré. Enfin, l'absence de documentation peut rendre le résultat difficile à comprendre et à reprendre par un développeur.
+
+La problématique de ce projet peut donc être formulée ainsi : \textit{comment automatiser la migration d'un projet front-end Angular monolithique vers une architecture micro-frontend exécutable, tout en contrôlant la qualité des transformations et en limitant les erreurs de migration ?}
+
+Cette problématique met en évidence trois dimensions. La première est l'analyse du projet source. La deuxième est la génération d'une architecture cible cohérente. La troisième est la validation progressive du résultat, afin que la migration produise un livrable exploitable et documenté.
+
+\subsection{Objectifs du projet}
+
+Les objectifs du projet ont été définis de manière à couvrir l'ensemble du processus de migration. Ils ne concernent pas uniquement la génération de fichiers, mais aussi la compréhension de l'application source, la structuration de l'architecture cible, la validation des résultats et la production d'une documentation utile.
+
+Pour rendre ces objectifs plus lisibles, le tableau~\ref{tab:objectifs-projet} les regroupe selon les principales actions attendues de la solution.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{3.3cm}|p{10.7cm}|}
+\caption{Objectifs du projet}\label{tab:objectifs-projet}\\
+\hline
+\textbf{Objectif} & \textbf{Description} \\
+\hline
+Analyser l'existant & Extraire les informations utiles du projet Angular source : structure, routes, composants, services, dépendances et éléments partagés. \\
+\hline
+Proposer un découpage & Identifier des domaines fonctionnels pouvant devenir des micro-frontends cohérents. \\
+\hline
+Générer la cible & Créer une structure de projet organisée autour d'une application principale et de plusieurs applications fonctionnelles. \\
+\hline
+Migrer les artefacts & Déplacer ou reconstruire les éléments nécessaires : composants, templates, styles, services, routes et configurations. \\
+\hline
+Valider le résultat & Vérifier la cohérence de l'architecture produite, la présence des fichiers attendus et la capacité du projet à être construit. \\
+\hline
+Documenter la migration & Produire une documentation indiquant les choix effectués, les transformations appliquées et la structure finale. \\
+\hline
+\end{longtable}
+\endgroup
+
+Ces objectifs servent de base à la planification du projet et au découpage des tâches. Ils permettent également d'évaluer la solution, car chaque objectif correspond à un livrable ou à un résultat observable.
+
+\subsection{Périmètre du projet}
+
+Le périmètre du projet a été défini pour garder un équilibre entre ambition et faisabilité. La solution vise les projets Angular monolithiques et se concentre sur les éléments front-end nécessaires à la migration. Elle prend en compte la structure applicative, les routes, les composants, les services et les dépendances utiles à l'architecture cible.
+
+En revanche, le projet ne vise pas à réécrire automatiquement toute la logique métier d'une application complexe ni à garantir la migration parfaite de tous les cas particuliers possibles. Certains ajustements peuvent rester nécessaires lorsque le projet source contient des spécificités fortes, des bibliothèques peu standardisées ou des intégrations non documentées.
+
+Le tableau~\ref{tab:perimetre-projet} précise les éléments inclus dans le périmètre du projet et ceux qui ne constituent pas l'objectif principal de cette solution.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{4cm}|p{5cm}|p{5cm}|}
+\caption{Délimitation du périmètre du projet}\label{tab:perimetre-projet}\\
+\hline
+\textbf{Aspect} & \textbf{Inclus dans le périmètre} & \textbf{Hors périmètre principal} \\
+\hline
+Technologie front-end & Projets Angular et structure associée & Migration vers d'autres frameworks front-end \\
+\hline
+Architecture cible & Shell, Remotes et configuration de fédération & Refonte complète de l'ergonomie ou du design produit \\
+\hline
+Migration technique & Composants, routes, services, styles et dépendances & Réécriture métier profonde non déductible du code source \\
+\hline
+Validation & Contrôles structurels, configuration et build & Audit de sécurité complet ou tests de charge avancés \\
+\hline
+Documentation & Rapport de migration et structure générée & Documentation fonctionnelle exhaustive de l'application métier \\
+\hline
+\end{longtable}
+\endgroup
+
+Cette délimitation permet de clarifier les attentes : la solution doit assister fortement la migration, produire une base exécutable et réduire l'effort manuel, mais elle ne remplace pas toute expertise d'architecture dans les cas complexes.
+
+\section{Intérêt et motivations du sujet}
+
+Dans cette section, nous présentons l'intérêt industriel, technique et académique du sujet. Nous mettons en évidence les raisons qui justifient le choix de cette problématique, notamment dans un contexte de modernisation applicative et d'automatisation des processus de développement.
+
+Ce sujet présente un intérêt industriel direct. De nombreuses entreprises possèdent des applications front-end développées sur plusieurs années, parfois devenues difficiles à faire évoluer. Une approche automatisée peut réduire l'effort manuel, améliorer la traçabilité et accélérer les premières étapes d'une migration architecturale.
+
+Pour une entreprise de conseil comme Talan, la modernisation applicative représente un enjeu concret. Les clients souhaitent souvent préserver la valeur de leurs systèmes existants tout en les rendant plus évolutifs. La capacité à proposer des démarches structurées, reproductibles et outillées constitue donc un avantage dans les missions d'accompagnement.
+
+Le projet présente également un intérêt technique. Il mobilise des compétences en analyse de code, architecture front-end, génération de projets, orchestration de traitements, validation automatique et documentation. Ces dimensions correspondent à des problématiques actuelles du développement logiciel, où l'automatisation et l'intelligence artificielle sont de plus en plus utilisées pour assister des tâches complexes.
+
+Enfin, le sujet est motivant sur le plan académique, car il oblige à relier plusieurs domaines : architecture logicielle, ingénierie front-end, méthodologie agile et systèmes multi-agents. Il ne s'agit pas seulement de développer une fonctionnalité isolée, mais de concevoir un processus complet, contrôlé et orienté résultat.
+
+\input{EtatDeLArt}
+
+\section{Positionnement par rapport aux solutions existantes}
+
+Dans cette section, nous présentons le positionnement du projet par rapport aux solutions existantes proches du besoin étudié. Cette comparaison permet de montrer les limites des approches disponibles et de préciser la place de la solution proposée dans le contexte de la migration vers une architecture micro-frontend.
+
+Avant de présenter la solution proposée, il est utile de situer le projet par rapport à quelques outils proches du besoin étudié. Les solutions comparées dans le tableau~\ref{tab:etude_existant_microfrontend} couvrent soit l'intégration de micro-frontends, soit l'automatisation de transformations de code, mais elles ne répondent pas entièrement au besoin de migration automatisée d'un projet Angular monolithique vers une architecture \textit{Shell}/\textit{Remotes}.
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.2cm}|>{\raggedright\arraybackslash}p{3.05cm}|>{\raggedright\arraybackslash}p{3.05cm}|>{\raggedright\arraybackslash}p{3.05cm}|>{\centering\arraybackslash}p{1.7cm}|}
+\caption{Étude comparative des solutions existantes proches du besoin}\label{tab:etude_existant_microfrontend}\\
+\hline
+\textbf{Solution} & \textbf{Principe} & \textbf{Apport principal} & \textbf{Limite par rapport au projet} & \textbf{Adéquation} \\
+\hline
+\textbf{Luigi} \cite{luigi} & Framework destiné à la construction d'applications modulaires et micro-frontends. & Fournit un cadre d'intégration pour composer plusieurs parties applicatives. & Ne prend pas en charge l'analyse complète d'un projet Angular source ni la génération d'un projet migré. & Forte \\
+\hline
+\textbf{Piral} \cite{piral_migration} & Framework micro-frontend orienté composition, extension et réutilisation de parties applicatives. & Facilite la modularité et la migration progressive dans son propre écosystème. & Plus naturellement adapté à des contextes React et fortement lié à son écosystème. & Moyenne \\
+\hline
+\textbf{OpenRewrite} \cite{openrewrite} & Framework d'automatisation de refactoring et de transformation de code à grande échelle. & Permet d'industrialiser des transformations répétitives. & Ne couvre pas la logique architecturale complète d'une migration vers un \textit{Shell} et des \textit{Remotes}. & Faible \\
+\hline
+\end{longtable}
+\endgroup
+
+Cette comparaison montre que le besoin du projet se situe entre deux familles d'outils : les frameworks d'intégration micro-frontend et les outils de transformation de code. La solution proposée cherche donc à combiner analyse, génération, migration et validation progressive dans un même processus contrôlé.
+
+\section{Solution proposée}
+
+Dans cette section, nous présentons la solution proposée pour répondre à la problématique du projet. Nous décrivons son principe général, son organisation sous forme de pipeline multi-agent ainsi que les responsabilités principales nécessaires à la migration automatisée.
+
+Pour répondre à la problématique, nous proposons un système multi-agent capable d'assister la migration d'un projet Angular monolithique vers une architecture micro-frontend exécutable. La solution est organisée comme un pipeline : chaque étape reçoit des informations, produit des artefacts intermédiaires et transmet un résultat contrôlé à l'étape suivante.
+
+La solution couvre les principales phases du processus : analyse du projet source, proposition d'un découpage fonctionnel, génération de l'architecture cible, migration des éléments applicatifs essentiels, validation et documentation. Chaque agent prend en charge une responsabilité précise, tandis qu'un mécanisme d'orchestration coordonne l'enchaînement des traitements et les éventuelles corrections.
+
+Le tableau~\ref{tab:responsabilites-solution} présente les responsabilités principales de cette solution et le rôle de chacune dans la chaîne de migration.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{4cm}|p{10cm}|}
+\caption{Vue générale des responsabilités de la solution}\label{tab:responsabilites-solution}\\
+\hline
+\textbf{Responsabilité} & \textbf{Rôle dans la solution} \\
+\hline
+Analyse & Comprendre la structure du projet source et produire une représentation exploitable par les autres étapes. \\
+\hline
+Conception cible & Définir les domaines fonctionnels, les futures applications et les règles d'organisation. \\
+\hline
+Génération & Créer la structure de base du projet cible et préparer les emplacements nécessaires. \\
+\hline
+Migration & Transférer les éléments du projet source vers les parties correspondantes du projet cible. \\
+\hline
+Validation & Contrôler les résultats intermédiaires et signaler les incohérences avant la livraison finale. \\
+\hline
+Documentation & Expliquer les choix, les fichiers générés et les actions effectuées pendant la migration. \\
+\hline
+\end{longtable}
+\endgroup
+
+L'objectif final est de produire un projet structuré, vérifiable et directement exploitable. La valeur de la solution ne réside donc pas uniquement dans l'automatisation, mais aussi dans la capacité à rendre la migration plus contrôlée, plus explicable et plus simple à reprendre par un développeur.
+
+\section{Méthodologie du travail}
+
+Dans cette section, nous présentons la méthodologie adoptée pour organiser la réalisation du projet. Nous décrivons l'utilisation de Scrum, son application dans le cadre du stage ainsi que les mécanismes de suivi et de validation mis en place.
+
+\subsection{Méthodologie adoptée}
+
+La réalisation du projet s'est appuyée sur Scrum, une méthode agile fondée sur une progression itérative et incrémentale. Le travail est organisé en cycles courts appelés \textit{sprints}, au terme desquels un incrément du produit est conçu, développé et évalué \cite{scrum_guide_fr}.
+
+Ce choix est adapté à la nature du projet. La conception d'un système de migration automatisée comporte plusieurs incertitudes : la qualité de l'analyse du projet source, la pertinence du découpage, la capacité à générer une architecture correcte et la fiabilité des validations. Une démarche itérative permet d'aborder ces difficultés progressivement, en vérifiant régulièrement les résultats obtenus.
+
+\subsection{Application de Scrum au projet}
+
+Dans notre cas, Scrum a été utilisé comme cadre d'organisation pour planifier les tâches, suivre l'avancement et structurer les livrables. Les détails relatifs à l'équipe Scrum, au backlog produit et à la planification des sprints sont présentés dans le chapitre d'analyse et de planification. Ici, nous retenons surtout l'intérêt de cette méthodologie pour organiser un travail évolutif.
+
+La méthodologie a permis de découper le projet en objectifs intermédiaires : préparation de l'application de référence, analyse structurelle, conception cible, génération du projet micro-frontend, migration détaillée, validation et documentation. Chaque objectif a été associé à des tâches réalisables, vérifiables et intégrables dans la suite du pipeline.
+
+La figure~\ref{fig:scrum_process} illustre le déroulement général du processus Scrum et montre la logique itérative adoptée pour organiser le travail.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/scrum.png}
+    \caption{Déroulement général du processus Scrum \cite{scrum_figure}}
+    \label{fig:scrum_process}
+\end{figure}
+
+\subsection{Suivi et validation des travaux}
+
+Le suivi du travail a reposé sur la définition de livrables intermédiaires. À chaque étape, le résultat produit devait pouvoir être observé : un analyseur capable d'extraire une structure, un plan de migration lisible, une architecture cible générée, un ensemble d'artefacts migrés ou un rapport de validation. Cette logique a permis d'éviter une progression uniquement basée sur du code non vérifié.
+
+La validation a occupé une place importante dans la démarche. Plutôt que d'attendre la fin du projet pour vérifier l'ensemble de la migration, des contrôles ont été prévus dès les étapes intermédiaires. Cette organisation est cohérente avec l'objectif général du sujet : automatiser la migration sans perdre la maîtrise du résultat.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce chapitre a présenté l'entreprise d'accueil, le contexte professionnel du stage, les motivations du sujet, la problématique, les objectifs, le périmètre, les fondements technologiques, le positionnement de la solution et la méthodologie adoptée. Cette organisation permet de regrouper dans un même chapitre le cadre du projet et les notions nécessaires à sa compréhension, tout en évitant les répétitions avec les chapitres d'analyse, de conception et de réalisation.

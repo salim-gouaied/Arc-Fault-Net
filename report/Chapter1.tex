@@ -1,0 +1,208 @@
+\chapter{Project Presentation and Theoretical Background}
+\label{chap:presentation}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+This first chapter sets the frame of the project. It introduces the host laboratory, the general context of arc fault detection in residential installations, the problem statement, and the global multi-model detection system targeted by this work, of which this internship realizes the first pillar. It then presents the theoretical concepts --- the physics of the electric arc, its electrical signatures, the normative context, and the deep learning notions --- that are required to understand the design decisions made in the following chapters.
+
+\section{Presentation of the host laboratory and of the project}
+
+\subsection{The host laboratory: Institut Jean Lamour}
+
+The Institut Jean Lamour (IJL) is a joint research unit (UMR~7198) of the CNRS and the Université de Lorraine, located in Nancy, France. Named after the famous Lorraine ironworker Jean Lamour, it is one of the largest European research institutes dedicated to materials science and engineering. The institute gathers several hundred researchers, engineers, technicians and doctoral students, and its activities span metallurgy, plasmas, surfaces, nanomaterials and electronics, with strong ties to industrial partners.
+
+\medskip
+
+This project was hosted by the \emph{Measurements and Electronic Architectures} team. The team develops instrumentation, sensor systems and embedded electronic architectures, with a long-standing research line on \textbf{electrical safety and arc fault detection} in low-voltage installations. The team operates a dedicated experimental platform for the controlled generation of electric arcs on realistic domestic circuits, which provided the raw data used throughout this work, and has contributed several published methods for series arc fault detection, including recent work combining signal analysis and deep learning \cite{su2026cumulants}.
+
+\subsection{General presentation of the project}
+
+\subsubsection{General context and problem statement}
+
+A significant share of residential fires is of electrical origin, and series arc faults are recognized as one of their major causes. A series arc appears when the conduction path of a single conductor is locally broken --- a frayed cable, an oxidized terminal, a loose screw connection --- and the current keeps flowing through an ionized air gap. The plasma column reaches several thousand degrees, while the fault current remains \emph{below} the nominal load current: neither the thermal-magnetic circuit breaker (which monitors overcurrents) nor the residual current device (which monitors leakage to earth) can react.
+
+\medskip
+
+Arc Fault Detection Devices (AFDD), standardized in Europe by IEC~62606 \cite{iec62606}, are designed to fill this gap by analyzing the line current waveform in real time. Their central difficulty is a \emph{generalization} problem:
+
+\begin{itemize}[itemsep=2pt]
+    \item the arc signature is not observed in isolation but through the connected load, whose impedance filters and masks the arc distortion;
+    \item domestic load diversity is enormous (resistive heaters, motors, switched-mode power supplies, dimmers), and several normal loads natively produce arc-like patterns;
+    \item a detector must simultaneously achieve a near-perfect detection rate (a missed arc is a fire hazard) and a near-zero false alarm rate (nuisance tripping makes the device commercially unacceptable).
+\end{itemize}
+
+A detection model trained on a limited set of laboratory experiments therefore tends to learn features that are specific to the recorded loads and conditions, and to fail silently when deployed in a real, unseen domestic installation. Bridging this laboratory-to-field gap is the core problem addressed by this project.
+
+\subsubsection{Proposed solution: a multi-model voting detection system}
+\label{sec:global-system}
+
+A single current cycle is sometimes intrinsically ambiguous: a motor start-up transient or a degraded-contact conduction can produce, \emph{within one cycle}, a pattern physically indistinguishable from an arc, while some arcing half-cycles are almost clean. The arc fault, however, is a \emph{persistent and fluctuating} phenomenon: over a window of several consecutive cycles, a true fault exhibits a recurring pattern of distorted cycles, whereas a load transient vanishes after one or two cycles. Since IEC~62606 tolerates a reaction time of several mains cycles \cite{iec62606}, the detection decision can legitimately be based on an observation window of up to \textbf{eight cycles} ($\approx 160$~ms) instead of a single one.
+
+\medskip
+
+The proposed solution is therefore a complete \textbf{multi-model detection system} (Figure~\ref{fig:global-system}) in which the final trip decision results from the \emph{vote} of several complementary experts observing the same window:
+
+\begin{enumerate}[itemsep=2pt]
+    \item \textbf{Expert 1 --- instantaneous single-cycle detector (this work).} \emph{Arc-FaultNet}, a multimodal deep network that recognizes the arc \emph{signature} within each individual cycle, analyzing jointly its temporal waveform and its STFT spectrogram. Applied cycle by cycle, it produces one arc-probability per cycle of the window.
+    \item \textbf{Expert 2 --- memory-based sequence model (future work).} A model with an internal state --- typically a state space model (SSM) or a recurrent network --- that consumes the sequence of cycles (or of per-cycle embeddings) and recognizes the \emph{temporal pattern of occurrence} of the fault: persistence, intermittency, ignition/extinction dynamics that no single-cycle view can capture.
+    \item \textbf{Expert 3 --- complementary detector (future work).} A third expert based on a different principle (e.g.\ descriptor-based statistical detector or inter-cycle residual analysis), chosen to fail independently from the two others.
+    \item \textbf{Voting decision layer.} The per-expert decisions over the observation window are merged by a voting rule (e.g.\ majority vote, or $k$-of-$n$ arcing cycles) into the final \emph{arc / no arc} decision. Ensemble decisions of independent experts are a classical way to reduce the false positive rate without sacrificing sensitivity --- precisely the trade-off that the AFDD standard demands.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    font=\small,
+    node distance=0.55cm and 0.9cm,
+    box/.style={draw, rounded corners=2pt, align=center, minimum height=0.9cm, inner sep=5pt},
+    done/.style={box, thick, fill=gray!12},
+    todo/.style={box, dashed},
+    arrow/.style={-{Stealth[length=2.5mm]}},
+]
+% Input window
+\node[box, minimum width=3.1cm] (window) {Observation window\\ $\leq 8$ cycles of $I(t)$};
+
+% Experts
+\node[done, right=0.85cm of window, yshift=1.85cm, minimum width=4.4cm] (m1) {\textbf{Expert 1 (this work)}\\ Arc-FaultNet\\ single-cycle signature};
+\node[todo, right=0.85cm of window, minimum width=4.4cm] (m2) {\textbf{Expert 2 (future)}\\ memory model (SSM)\\ inter-cycle pattern};
+\node[todo, right=0.85cm of window, yshift=-1.85cm, minimum width=4.4cm] (m3) {\textbf{Expert 3 (future)}\\ complementary\\ detector};
+
+% Voting
+\node[box, right=0.85cm of m2, minimum width=2.4cm, minimum height=1.4cm] (vote) {Voting\\ layer};
+
+% Output
+\node[box, right=0.7cm of vote, minimum width=2.1cm] (out) {Decision\\ arc / no arc};
+
+% Arrows
+\draw[arrow] (window.east) -- ++(0.35,0) |- (m1.west);
+\draw[arrow] (window.east) -- (m2.west);
+\draw[arrow] (window.east) -- ++(0.35,0) |- (m3.west);
+\draw[arrow] (m1.east) -- ++(0.35,0) |- (vote.west);
+\draw[arrow] (m2.east) -- (vote.west);
+\draw[arrow] (m3.east) -- ++(0.35,0) |- (vote.west);
+\draw[arrow] (vote.east) -- (out.west);
+\end{tikzpicture}
+\caption{Target multi-model detection system. The final decision is taken by voting among complementary experts over a multi-cycle observation window. This internship designs and validates Expert~1 (solid box); the dashed experts and their integration constitute the planned continuation of the work.}
+\label{fig:global-system}
+\end{figure}
+
+\paragraph{Scope of this internship.} The present work realizes the \textbf{first pillar} of this system, which conditions all the others: (i) the complete data engineering pipeline --- acquisition, cycle segmentation, automatic oracle-based labeling, normalization, decimation --- that will feed every future expert; (ii) the design, iterative refinement and validation of the single-cycle detector Arc-FaultNet; and (iii) the generalization-oriented evaluation methodology (multi-seed protocols, corrected ablation, recording-level cross-validation) that will serve as the yardstick for the whole system. The memory-based expert and the voting layer are specified as the direct continuation of this work and are discussed in the conclusion.
+
+\subsubsection{Project milestones}
+
+The six-month internship was organized in the following stages, which also structure this report:
+
+\begin{table}[H]
+\centering
+\caption{Main stages of the project.}
+\label{tab:milestones}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|P{1.6cm}|p{11.6cm}|}
+\hline
+\textbf{Period} & \textbf{Stage} \\
+\hline
+Month 1 & Literature review on series arc fault detection; familiarization with the experimental bench, the arc physics and the IEC~62606 requirements; specification of the target multi-model system. \\
+\hline
+Month 2 & Construction of the data pipeline: acquisition campaigns, cycle segmentation, automatic oracle-based labeling, quality assurance of the labeled dataset. \\
+\hline
+Month 3 & First single-cycle model (Arc-FaultNet V1), first honest evaluation on the combined dataset, diagnosis of the initial overfitting and of the representation bottleneck. \\
+\hline
+Month 4 & Redesign towards the single-cycle V2 architecture: decimation study, physics-informed derived channels, dual-branch structure. \\
+\hline
+Month 5 & Architecture refinement: squeeze-and-excitation blocks, deep classification head, re-engineering of the fusion stage from pooled channel gating to a sequence-level Q/K/V cross-attention. \\
+\hline
+Month 6 & Corrected ablation study, recording-level generalization measurements, false positive forensics, roadmap of the memory-based expert and voting layer, writing of this report. \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Theoretical background}
+
+\subsection{The electric arc phenomenon}
+
+An electric arc is a self-sustained electrical discharge through an ionized gas. When two conductors carrying current separate slightly, or when a conductor is locally broken, the electric field across the microscopic gap becomes sufficient to ionize the air: a plasma channel forms, with a core temperature of several thousand kelvins. The arc behaves as a strongly \textbf{nonlinear, time-varying impedance}: its voltage exhibits a nearly flat plateau (the \emph{arc voltage}, typically a few tens of volts) largely independent of the current flowing through it.
+
+\medskip
+
+On an AC network, the arc extinguishes at every current zero crossing, when the energy input vanishes, and \emph{re-ignites} shortly after, once the voltage across the gap rebuilds beyond the ignition threshold. This periodic extinction/re-ignition cycle at 100~Hz (twice per 50~Hz period) is the root of the characteristic distortions used for detection. Moreover, the arc is a \emph{stochastic} phenomenon: the plasma column moves, the electrodes erode, and the intensity of the distortion fluctuates from one cycle to the next --- which is precisely why the target system of Section~\ref{sec:global-system} complements the per-cycle signature analysis with a multi-cycle pattern analysis.
+
+\subsection{Series and parallel arc faults}
+
+Two configurations must be distinguished:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Parallel arc}: the arc bridges two conductors of different potential (line-to-neutral or line-to-earth). The fault current is limited only by the line impedance and can reach very high values; conventional protections eventually trip.
+    \item \textbf{Series arc}: the arc appears \emph{in series} with the load, in the break of a single conductor. The current is bounded by the load impedance and remains at or below the normal operating current. No overcurrent, no earth leakage: \emph{conventional protections are blind}, while the arc locally dissipates $P \approx V_{\text{arc}} \cdot I_{\text{load}}$ (tens to hundreds of watts) in a spot small enough to ignite insulation materials.
+\end{itemize}
+
+This project focuses on the series arc fault, the harder and more safety-critical case.
+
+\subsection{Electrical signatures of a series arc}
+\label{sec:signatures}
+
+A series arc superimposes several measurable perturbations on the line current $I(t)$:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Flat shoulders}: around each zero crossing, while the arc is extinguished and the gap voltage rebuilds, the current stays clamped near zero longer than normal, flattening the sinusoid shoulders;
+    \item \textbf{Re-ignition spikes}: the sudden re-ignition produces a step-like discontinuity of the current, i.e.\ a large instantaneous $\mathrm{d}I/\mathrm{d}t$;
+    \item \textbf{Broadband noise}: the chaotic dynamics of the plasma column superimpose a wideband noise, whose discriminative content is concentrated below approximately 50~kHz \cite{dowalla2023,ning2024interp};
+    \item \textbf{Amplitude reduction and envelope irregularity}: the arc adds a lossy, fluctuating impedance in the circuit, slightly lowering and destabilizing the current envelope from one cycle to the next.
+\end{itemize}
+
+Crucially, all these signatures are modulated by the load: an inductive load smooths the re-ignition steps, an electronic load generates its own switching noise, and a resistive load preserves the arc distortion best. This load dependence is the main source of both missed detections and false alarms.
+
+\subsection{AFDDs and the IEC 62606 standard}
+
+The IEC~62606 standard \cite{iec62606} defines the general requirements for Arc Fault Detection Devices: the test circuits and load types against which detection must be demonstrated, the maximum reaction times as a function of the arc current, and the immunity tests against \emph{masking} loads that must \emph{not} cause tripping. Two practical consequences shaped this project:
+
+\begin{itemize}[itemsep=2pt]
+    \item the standard tolerates a reaction time corresponding to \emph{several mains cycles} (e.g.\ a few hundred milliseconds at low arc currents), which legitimizes the multi-cycle observation window and the voting decision layer of the target system;
+    \item the immunity requirements make the \emph{false positive rate} a first-class design constraint, on par with the detection rate.
+\end{itemize}
+
+An AFDD is ultimately an embedded product: the detection algorithm must run in real time on a microcontroller-class processor with a modest memory budget, which constrains both the sampling rate and the size of every model in the system.
+
+\subsection{Deep learning for signal classification}
+
+\subsubsection{One-dimensional convolutional networks}
+
+Convolutional neural networks (CNN) learn banks of localized filters applied by sliding over the input. In one dimension, a stack of convolutional layers with increasing receptive field can learn detectors of waveform motifs (spikes, shoulders, oscillation bursts) directly from the signal, replacing hand-crafted descriptors. Compared with recurrent models, 1-D CNNs are highly parallel, parameter-efficient and well suited to fixed-length inputs such as one mains cycle.
+
+\subsubsection{Time--frequency analysis and 2-D convolutional networks}
+
+The Short-Time Fourier Transform (STFT) computes the spectrum of successive windowed slices of a signal, producing a \emph{spectrogram}: a 2-D image whose axes are time and frequency. The window length trades temporal resolution against frequency resolution (Heisenberg--Gabor uncertainty). Spectrograms are a natural representation for arc detection: the broadband bursts of an arc appear as vertical structures spanning many frequency bins, quite distinct from the horizontal lines of load harmonics. A 2-D CNN operating on the spectrogram can learn such patterns exactly as image classifiers learn visual textures.
+
+\subsubsection{Attention mechanisms}
+
+Attention mechanisms let a network dynamically re-weight information instead of processing it uniformly:
+
+\begin{itemize}[itemsep=2pt]
+    \item \textbf{Channel attention} (squeeze-and-excitation, SE \cite{hu2018squeeze}): each feature map channel is rescaled by a learned, input-dependent coefficient, amplifying informative channels and suppressing irrelevant ones at a negligible parameter cost.
+    \item \textbf{Dot-product attention} \cite{vaswani2017attention}: given query, key and value sequences, the operation $\mathrm{softmax}(QK^{\top}/\sqrt{d_k})\,V$ builds, at each query position, a content-dependent weighted summary of the values. \emph{Cross}-attention uses queries from one representation and keys/values from another, allowing position-wise alignment between two heterogeneous views --- here, between the temporal and spectral views of the same current cycle.
+\end{itemize}
+
+\subsubsection{Memory-based sequence models}
+
+While a CNN processes a fixed window, sequence models maintain an internal \emph{state} updated cycle after cycle: recurrent networks (LSTM) and, more recently, \textbf{state space models} (SSM) that combine the linear-time inference of recurrences with the training efficiency of convolutions. Such models are the natural candidates for Expert~2 of the target system: they can accumulate evidence about the \emph{persistence} of the fault over the observation window, a dimension that is invisible to any single-cycle classifier.
+
+\subsection{Generalization, overfitting and evaluation protocols}
+
+A model \emph{generalizes} when its performance on unseen data matches its performance on training data. With small datasets and large models, neural networks can reach the \emph{interpolation regime} where they memorize the training set entirely --- fitting even random labels \cite{zhang2017rethinking} --- so a high training or resubstitution score carries no information. Reliable estimation requires held-out data, and the \emph{granularity} of the split matters:
+
+\begin{itemize}[itemsep=2pt]
+    \item a \textbf{stratified random split} measures performance on new cycles drawn from already-seen experiments (optimistic: the model may recognize the recording, not the arc);
+    \item \textbf{K-fold cross-validation} averages the estimate over several rotations of the held-out fold, reducing its variance;
+    \item \textbf{GroupKFold at the recording level} holds out \emph{entire experiments} (load, electrode material, session), so that test cycles come from conditions never seen during training --- the closest laboratory proxy to a field deployment.
+\end{itemize}
+
+Since random initialization and mini-batch ordering make training stochastic, single-run comparisons are unreliable; multi-seed repetitions and dispersion measures (standard deviation, coefficient of variation) are used throughout this work, and sharp/flat minima considerations \cite{keskar2017large} explain why some architectural choices improve \emph{stability} more than peak performance.
+
+\section{Development tools}
+
+The project was developed entirely in \textbf{Python~3.12}. Model design, training and evaluation rely on \textbf{PyTorch}; signal processing (filtering, polyphase resampling, STFT) on \textbf{NumPy} and \textbf{SciPy}; evaluation metrics and cross-validation utilities on \textbf{scikit-learn}; and all visualizations on \textbf{Matplotlib}. The experimental data were acquired with a \textbf{Teledyne LeCroy} digital oscilloscope sampling three channels at 1~MHz on the IJL arc generation bench. Code, experiments and documentation are versioned with \textbf{Git}, and every training run archives its configuration, metrics and model weights to guarantee reproducibility.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+This chapter introduced the host laboratory, the industrial and normative context of series arc fault detection, and the global solution proposed to address it: a multi-model voting system operating on a multi-cycle observation window, whose first pillar --- the single-cycle detector Arc-FaultNet and its data and evaluation infrastructure --- is the object of this internship. It also presented the scientific background: the physics of the series arc and its load-dependent signatures, the reasons why conventional protections cannot detect it, and the deep learning building blocks on which the system is built. The next chapter reviews how the recent literature has combined these ingredients, and identifies the gap that Arc-FaultNet aims to fill.

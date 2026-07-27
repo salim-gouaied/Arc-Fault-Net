@@ -1,0 +1,142 @@
+\begin{thebibliography}{10}
+
+\bibitem{su2026cumulants}
+Zhicong Su, Patrick Schweitzer, Haoyong Chen, and Ruobo Chu.
+\newblock Series arc fault detection using differential higher-order cumulants
+  and symmetric stacked autoencoder.
+\newblock {\em Symmetry}, 18(6):1003, 2026.
+
+\bibitem{iec62606}
+{International Electrotechnical Commission}.
+\newblock {IEC} 62606: General requirements for arc fault detection devices.
+\newblock International Standard, Edition 1.0 and amendments, 2013.
+
+\bibitem{dowalla2023}
+Krzysztof Dowalla, Piotr Bilski, Robert {\L}ukaszewski, Augustyn W{\'o}jcik,
+  and Ryszard Kowalik.
+\newblock A novel method for detection and location of series arc fault for
+  non-intrusive load monitoring.
+\newblock {\em Energies}, 16(1):171, 2023.
+
+\bibitem{ning2024interp}
+Xin Ning, Dejie Sheng, Tianle Lan, Wenbing He, Jiayu Xiong, and Yao Wang.
+\newblock Lightweight low-voltage {AC} arc-fault detection method based on the
+  interpretability method.
+\newblock {\em Electronics}, 13(13):2662, 2024.
+
+\bibitem{hu2018squeeze}
+Jie Hu, Li~Shen, and Gang Sun.
+\newblock Squeeze-and-excitation networks.
+\newblock In {\em Proceedings of the IEEE Conference on Computer Vision and
+  Pattern Recognition (CVPR)}, pages 7132--7141, 2018.
+
+\bibitem{vaswani2017attention}
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+  Aidan~N. Gomez, {\L}ukasz Kaiser, and Illia Polosukhin.
+\newblock Attention is all you need.
+\newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)},
+  pages 5998--6008, 2017.
+
+\bibitem{zhang2017rethinking}
+Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin Recht, and Oriol Vinyals.
+\newblock Understanding deep learning requires rethinking generalization.
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2017.
+
+\bibitem{keskar2017large}
+Nitish~Shirish Keskar, Dheevatsa Mudigere, Jorge Nocedal, Mikhail Smelyanskiy,
+  and Ping Tak~Peter Tang.
+\newblock On large-batch training for deep learning: Generalization gap and
+  sharp minima.
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2017.
+
+\bibitem{zhang2024event}
+Yang Zhang, Hong~Cai Chen, Zhe Li, Chuanzhen Jia, Yaping Du, Kanjian Zhang, and
+  Haikun Wei.
+\newblock Lightweight {AC} arc fault detection method by integration of
+  event-based load classification.
+\newblock {\em IEEE Transactions on Industrial Electronics}, 71(4):4130--4140,
+  2024.
+
+\bibitem{zhang2025background}
+Xiaofei Zhang, Jinjie Li, Bangzheng Han, Wei Wang, and Guofeng Zou.
+\newblock Low-voltage alternating current series arc fault detection using
+  periodic background subtraction and linear dividing lines.
+\newblock {\em IEEE Access}, 13:47201--47216, 2025.
+
+\bibitem{liu2023fcm}
+Song Liu, Dan Li, Xinyi Di, and Wenxiao Ma.
+\newblock An {AC} arc fault detection method based on {FCM-LSTM-CNN}.
+\newblock In {\em 2023 3rd International Conference on Energy Engineering and
+  Power Systems (EEPS)}, pages 674--679, 2023.
+
+\bibitem{ning2024cbn}
+Xin Ning, Tianli Ding, and Hongwei Zhu.
+\newblock Research on arc fault detection based on conditional batch
+  normalization convolutional neural network with cost-sensitive multi-feature
+  extraction.
+\newblock {\em Sensors}, 24(23):7628, 2024.
+
+\bibitem{qu2023multimodal}
+Na~Qu, Wenlong Wei, and Congqiang Hu.
+\newblock Series arc fault detection based on multimodal feature fusion.
+\newblock {\em Sensors}, 23(17):7646, 2023.
+
+\bibitem{wang2025mtf}
+Haitao Wang, Juyuan Kang, and Yigang Lin.
+\newblock Low-voltage series arc fault detection based on multi-feature fusion
+  and improved residual network.
+\newblock {\em Electronics}, 14(7):1325, 2025.
+
+\bibitem{paul2021efficient}
+Kamal~Chandra Paul, Tiefu Zhao, Chen Chen, Yunsheng Ban, and Yao Wang.
+\newblock Efficient-{ArcNet}: Series {AC} arc fault detection using lightweight
+  convolutional neural network.
+\newblock In {\em 2021 IEEE Energy Conversion Congress and Exposition (ECCE)},
+  pages 1327--1333, 2021.
+
+\bibitem{ning2023arceffnet}
+Xin Ning, Dejie Sheng, Jiawang Zhou, Yuying Liu, Yao Wang, Hua Zhang, and Xiao
+  Lei.
+\newblock Arc\_{EffNet}: A novel series arc fault detection method based on
+  lightweight neural network.
+\newblock {\em Electronics}, 12(22):4617, 2023.
+
+\bibitem{huang2025shufflenet}
+Yuehua Huang, Yun Lu, Liping Fan, Kun Xiang, and Hui Ma.
+\newblock Fault arc detection method based on improved {ShuffleNet~V2} network.
+\newblock {\em Processes}, 13(1):135, 2025.
+
+\bibitem{wang2026tdda}
+Yao Wang, Tianle Lan, Qing Ye, Dejie Sheng, Zhizhou Bao, and Runan Song.
+\newblock Series arc fault detection method based on {TDDA-CNN} prototype
+  learning model.
+\newblock {\em Electronics}, 15(3):681, 2026.
+
+\bibitem{choi2024feature}
+Won-Kyu Choi, Se-Han Kim, and Ji-Hoon Bae.
+\newblock Series-arc-fault diagnosis using feature fusion-based deep learning
+  model.
+\newblock {\em ETRI Journal}, 46(6):1061--1074, 2024.
+
+\bibitem{gao2023channel}
+Xiang Gao, Gan Zhou, Jian Zhang, Ying Zeng, Yanjun Feng, and Yuyuan Liu.
+\newblock Fault arc detection based on channel attention mechanism and
+  lightweight residual network.
+\newblock {\em Energies}, 16(13):4954, 2023.
+
+\bibitem{park2019specaugment}
+Daniel~S. Park, William Chan, Yu~Zhang, Chung-Cheng Chiu, Barret Zoph, Ekin~D.
+  Cubuk, and Quoc~V. Le.
+\newblock {SpecAugment}: A simple data augmentation method for automatic speech
+  recognition.
+\newblock In {\em Proceedings of Interspeech 2019}, pages 2613--2617, 2019.
+
+\bibitem{kaiser1990tkeo}
+James~F. Kaiser.
+\newblock On a simple algorithm to calculate the `energy' of a signal.
+\newblock In {\em International Conference on Acoustics, Speech, and Signal
+  Processing (ICASSP)}, pages 381--384, 1990.
+
+\end{thebibliography}

@@ -85,9 +85,9 @@ def main():
     p.add_argument("--cpu", action="store_true")
     # Data / signal.
     p.add_argument("--data-dir", type=str,
-                   default="/home/manip/pfe_salim_gouaied/Arc-Fault-Net/labeled_dataset")
+                   default="combined_dataset_2048")
     p.add_argument("--output-dir", type=str,
-                   default="/home/manip/pfe_salim_gouaied/Arc-Fault-Net/runs")
+                   default="runs")
     p.add_argument("--channel-mode", type=str, default="auto",
                    choices=["auto", "raw2", "i_derived4"])
     p.add_argument("--fs", type=int, default=None)

@@ -1,0 +1,3 @@
+dataset,exp_name,alt_index,arc_ratio,label,start_sample,end_sample,prob,pred,true
+22_juillet_clean,exp13--IJL--LR,3,0.0,0,75567,95531,0.80263996,1,0
+22_juillet_clean,exp13--IJL--LR,7,0.0,0,158679,178689,0.64791745,1,0

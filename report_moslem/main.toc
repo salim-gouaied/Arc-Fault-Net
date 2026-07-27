@@ -1,0 +1,133 @@
+\babel@toc {french}{}\relax 
+\contentsline {chapter}{Abstract}{iii}{chapter*.3}%
+\contentsline {section}{Résumé}{iv}{section*.4}%
+\contentsline {chapter}{Table des figures}{ix}{chapter*.6}%
+\contentsline {chapter}{Liste des tableaux}{xi}{chapter*.7}%
+\contentsline {chapter}{Liste des acronymes}{xii}{chapter*.8}%
+\contentsline {chapter}{Introduction générale}{1}{chapter*.9}%
+\contentsline {chapter}{\numberline {1}Cadre général et fondements du projet}{3}{chapter.10}%
+\contentsline {section}{Introduction}{3}{section*.11}%
+\contentsline {section}{\numberline {1.1}Présentation de l'entreprise d'accueil}{3}{section.12}%
+\contentsline {subsection}{\numberline {1.1.1}Talan Tunisie Consulting}{3}{subsection.13}%
+\contentsline {subsection}{\numberline {1.1.2}Secteurs d'activité}{4}{subsection.14}%
+\contentsline {subsection}{\numberline {1.1.3}Département Tech et Cloud}{5}{subsection.16}%
+\contentsline {subsection}{\numberline {1.1.4}Bootcamp d'intégration}{5}{subsection.17}%
+\contentsline {section}{\numberline {1.2}Présentation du projet}{6}{section.19}%
+\contentsline {subsection}{\numberline {1.2.1}Contexte du projet}{6}{subsection.20}%
+\contentsline {subsection}{\numberline {1.2.2}Constat initial}{7}{subsection.21}%
+\contentsline {subsection}{\numberline {1.2.3}Problématique}{7}{subsection.23}%
+\contentsline {subsection}{\numberline {1.2.4}Objectifs du projet}{8}{subsection.24}%
+\contentsline {subsection}{\numberline {1.2.5}Périmètre du projet}{9}{subsection.26}%
+\contentsline {section}{\numberline {1.3}Intérêt et motivations du sujet}{9}{section.28}%
+\contentsline {section}{\numberline {1.4}Fondements technologiques et état de l'art}{10}{section.29}%
+\contentsline {subsection}{\numberline {1.4.1}Évolution des architectures front-end}{10}{subsection.30}%
+\contentsline {subsection}{\numberline {1.4.2}Architecture front-end monolithique}{10}{subsection.31}%
+\contentsline {subsection}{\numberline {1.4.3}Architecture micro-frontend}{11}{subsection.33}%
+\contentsline {subsubsection}{\numberline {1.4.3.1}Définition et principe général}{11}{subsubsection.34}%
+\contentsline {subsubsection}{\numberline {1.4.3.2}Fondements d'une architecture micro-frontend : Shell et Remotes}{12}{subsubsection.36}%
+\contentsline {subsubsection}{\numberline {1.4.3.3}Module Federation}{12}{subsubsection.37}%
+\contentsline {subsubsection}{\numberline {1.4.3.4}Modes d'intégration}{13}{subsubsection.39}%
+\contentsline {subsubsection}{\numberline {1.4.3.5}Points de vigilance}{13}{subsubsection.40}%
+\contentsline {subsection}{\numberline {1.4.4}Migration vers les micro-frontends}{14}{subsection.42}%
+\contentsline {subsubsection}{\numberline {1.4.4.1}Migration progressive et découpage fonctionnel}{14}{subsubsection.43}%
+\contentsline {subsubsection}{\numberline {1.4.4.2}Risques liés à la migration}{14}{subsubsection.44}%
+\contentsline {subsection}{\numberline {1.4.5}Angular : composants, services et routage dans le contexte d'une migration}{15}{subsection.45}%
+\contentsline {subsection}{\numberline {1.4.6}Large Language Models}{16}{subsection.47}%
+\contentsline {subsection}{\numberline {1.4.7}Agentic AI}{16}{subsection.48}%
+\contentsline {subsection}{\numberline {1.4.8}Automatisation de la migration}{16}{subsection.49}%
+\contentsline {subsection}{\numberline {1.4.9}Systèmes multi-agents et orchestration}{17}{subsection.50}%
+\contentsline {paragraph}{Synthèse.}{17}{section*.51}%
+\contentsline {section}{\numberline {1.5}Positionnement par rapport aux solutions existantes}{17}{section.52}%
+\contentsline {section}{\numberline {1.6}Solution proposée}{18}{section.54}%
+\contentsline {section}{\numberline {1.7}Méthodologie du travail}{19}{section.56}%
+\contentsline {subsection}{\numberline {1.7.1}Méthodologie adoptée}{19}{subsection.57}%
+\contentsline {subsection}{\numberline {1.7.2}Application de Scrum au projet}{20}{subsection.58}%
+\contentsline {subsection}{\numberline {1.7.3}Suivi et validation des travaux}{20}{subsection.60}%
+\contentsline {section}{Conclusion}{21}{section*.61}%
+\contentsline {chapter}{\numberline {2}Analyse et planification}{22}{chapter.62}%
+\contentsline {section}{Introduction}{22}{section*.63}%
+\contentsline {section}{\numberline {2.1}Analyse des besoins}{22}{section.64}%
+\contentsline {subsection}{\numberline {2.1.1}Besoins fonctionnels}{22}{subsection.65}%
+\contentsline {subsection}{\numberline {2.1.2}Besoins non fonctionnels}{23}{subsection.66}%
+\contentsline {subsection}{\numberline {2.1.3}Identification des acteurs}{23}{subsection.67}%
+\contentsline {section}{\numberline {2.2}Étude architecturale}{24}{section.69}%
+\contentsline {subsection}{\numberline {2.2.1}Objectif de l'architecture proposée}{24}{subsection.70}%
+\contentsline {subsection}{\numberline {2.2.2}Contraintes et exigences architecturales}{25}{subsection.71}%
+\contentsline {subsection}{\numberline {2.2.3}Approche multi-agent adoptée}{25}{subsection.73}%
+\contentsline {subsection}{\numberline {2.2.4}Patterns architecturaux appliqués au pipeline}{27}{subsection.74}%
+\contentsline {subsection}{\numberline {2.2.5}Vue d'ensemble de l'architecture proposée}{29}{subsection.83}%
+\contentsline {subsection}{\numberline {2.2.6}Architecture logique du système}{31}{subsection.85}%
+\contentsline {subsection}{\numberline {2.2.7}Pipeline de migration proposé}{31}{subsection.87}%
+\contentsline {section}{\numberline {2.3}Présentation de l'équipe Scrum}{33}{section.89}%
+\contentsline {section}{\numberline {2.4}Mise en place de l'application de référence}{33}{section.91}%
+\contentsline {section}{\numberline {2.5}Backlog du produit}{34}{section.92}%
+\contentsline {section}{\numberline {2.6}Planification des sprints}{36}{section.94}%
+\contentsline {section}{\numberline {2.7}Environnement du travail}{37}{section.97}%
+\contentsline {subsection}{\numberline {2.7.1}Environnement matériel}{38}{subsection.98}%
+\contentsline {subsection}{\numberline {2.7.2}Environnement logiciel}{38}{subsection.99}%
+\contentsline {section}{Conclusion}{39}{section*.100}%
+\contentsline {chapter}{\numberline {3}Release 1 : Préparation du pipeline et génération structurelle}{40}{chapter.101}%
+\contentsline {section}{Introduction}{40}{section*.102}%
+\contentsline {section}{\numberline {3.1}Planification de la Release 1}{40}{section.103}%
+\contentsline {section}{\numberline {3.2}Sprint 1 : Mise en place de l'orchestrateur et du moteur d'extraction structurelle}{41}{section.105}%
+\contentsline {subsection}{\numberline {3.2.1}Objectif du Sprint 1}{41}{subsection.106}%
+\contentsline {subsection}{\numberline {3.2.2}Analyse du Sprint 1}{41}{subsection.108}%
+\contentsline {subsection}{\numberline {3.2.3}Conception du Sprint 1}{42}{subsection.109}%
+\contentsline {subsubsection}{\numberline {3.2.3.1}Conception de l'orchestrateur et de l'état partagé}{43}{subsubsection.111}%
+\contentsline {subsubsection}{\numberline {3.2.3.2}Conception du moteur d'extraction structurelle}{44}{subsubsection.114}%
+\contentsline {section}{\numberline {3.3}Sprint 2 : Conception de l'architecture micro-frontend cible}{45}{section.115}%
+\contentsline {subsection}{\numberline {3.3.1}Objectif du Sprint 2}{45}{subsection.116}%
+\contentsline {subsection}{\numberline {3.3.2}Analyse du Sprint 2}{46}{subsection.118}%
+\contentsline {subsection}{\numberline {3.3.3}Conception du Sprint 2}{46}{subsection.119}%
+\contentsline {subsubsection}{\numberline {3.3.3.1}Conception de l'agent de délimitation des domaines métier}{47}{subsubsection.121}%
+\contentsline {subsubsection}{\numberline {3.3.3.2}Conception de l'agent de conception du plan directeur de migration}{48}{subsubsection.123}%
+\contentsline {subsubsection}{\numberline {3.3.3.3}Validation des sorties des agents}{49}{subsubsection.125}%
+\contentsline {section}{\numberline {3.4}Sprint 3 : Génération structurelle du projet micro-frontend}{49}{section.126}%
+\contentsline {subsection}{\numberline {3.4.1}Objectif du Sprint 3}{50}{subsection.127}%
+\contentsline {subsection}{\numberline {3.4.2}Analyse du Sprint 3}{50}{subsection.129}%
+\contentsline {subsection}{\numberline {3.4.3}Conception du Sprint 3}{50}{subsection.130}%
+\contentsline {subsubsection}{\numberline {3.4.3.1}Conception de l'agent de génération de l'environnement de travail du projet et du Shell}{51}{subsubsection.132}%
+\contentsline {subsubsection}{\numberline {3.4.3.2}Conception de l'agent de génération des squelettes Remote}{52}{subsubsection.134}%
+\contentsline {subsubsection}{\numberline {3.4.3.3}Validation des sorties de génération}{53}{subsubsection.136}%
+\contentsline {chapter}{\numberline {4}Release 2 : Migration détaillée et intégration finale}{54}{chapter.137}%
+\contentsline {section}{Introduction}{54}{section*.138}%
+\contentsline {section}{\numberline {4.1}Planification de la Release 2}{54}{section.139}%
+\contentsline {section}{\numberline {4.2}Sprint 4 : Migration des services, de la gestion d'état et des éléments partagés}{55}{section.141}%
+\contentsline {subsection}{\numberline {4.2.1}Objectif du Sprint 4}{55}{subsection.142}%
+\contentsline {subsection}{\numberline {4.2.2}Analyse du Sprint 4}{56}{subsection.144}%
+\contentsline {subsection}{\numberline {4.2.3}Conception du Sprint 4}{56}{subsection.145}%
+\contentsline {subsubsection}{\numberline {4.2.3.1}Diagramme d'activité du Sprint 4}{56}{subsubsection.146}%
+\contentsline {subsubsection}{\numberline {4.2.3.2}Migration des éléments partagés}{57}{subsubsection.148}%
+\contentsline {subsubsection}{\numberline {4.2.3.3}Migration des services et de la gestion d'état}{57}{subsubsection.149}%
+\contentsline {subsection}{\numberline {4.2.4}Validation du Sprint 4}{58}{subsection.150}%
+\contentsline {section}{\numberline {4.3}Sprint 5 : Migration des routes, des composants, des templates et des styles}{58}{section.151}%
+\contentsline {subsection}{\numberline {4.3.1}Objectif du Sprint 5}{58}{subsection.152}%
+\contentsline {subsection}{\numberline {4.3.2}Analyse du Sprint 5}{59}{subsection.154}%
+\contentsline {subsection}{\numberline {4.3.3}Conception du Sprint 5}{59}{subsection.155}%
+\contentsline {subsubsection}{\numberline {4.3.3.1}Migration des routes}{60}{subsubsection.156}%
+\contentsline {subsubsection}{\numberline {4.3.3.2}Migration des composants, templates et styles}{60}{subsubsection.157}%
+\contentsline {subsubsection}{\numberline {4.3.3.3}Validation de l'intégration backend}{60}{subsubsection.158}%
+\contentsline {subsection}{\numberline {4.3.4}Validation du Sprint 5}{60}{subsection.159}%
+\contentsline {subsubsection}{\numberline {4.3.4.1}Diagramme d'activité du Sprint 5}{61}{subsubsection.160}%
+\contentsline {section}{\numberline {4.4}Sprint 6 : Configuration Module Federation, validation finale, documentation et stabilisation}{62}{section.162}%
+\contentsline {subsection}{\numberline {4.4.1}Objectif du Sprint 6}{62}{subsection.163}%
+\contentsline {subsection}{\numberline {4.4.2}Analyse du Sprint 6}{62}{subsection.165}%
+\contentsline {subsection}{\numberline {4.4.3}Conception du Sprint 6}{63}{subsection.166}%
+\contentsline {subsubsection}{\numberline {4.4.3.1}Diagramme d'activité du Sprint 6}{63}{subsubsection.167}%
+\contentsline {subsubsection}{\numberline {4.4.3.2}Configuration de Module Federation}{64}{subsubsection.169}%
+\contentsline {subsubsection}{\numberline {4.4.3.3}Validation finale}{64}{subsubsection.170}%
+\contentsline {subsubsection}{\numberline {4.4.3.4}Documentation, livraison et stabilisation}{65}{subsubsection.171}%
+\contentsline {subsection}{\numberline {4.4.4}Validation du Sprint 6}{65}{subsection.172}%
+\contentsline {section}{Conclusion}{65}{section*.173}%
+\contentsline {chapter}{\numberline {5}Réalisation}{66}{chapter.174}%
+\contentsline {section}{Introduction}{66}{section*.175}%
+\contentsline {section}{\numberline {5.1}Interface graphique du migrateur}{66}{section.176}%
+\contentsline {section}{\numberline {5.2}Suivi de l'exécution et validation humaine}{69}{section.181}%
+\contentsline {section}{\numberline {5.3}Récupération du projet généré}{74}{section.190}%
+\contentsline {section}{\numberline {5.4}Lancement du nouveau projet}{76}{section.195}%
+\contentsline {section}{\numberline {5.5}Validation visuelle de l'application générée}{81}{section.204}%
+\contentsline {section}{\numberline {5.6}Livrables finaux}{85}{section.213}%
+\contentsline {section}{Conclusion}{86}{section*.215}%
+\contentsline {chapter}{Conclusion générale}{87}{chapter*.216}%
+\contentsline {chapter}{Bibliographie}{}{chapter*.217}%
+\contentsline {chapter}{Annexe}{}{appendix*.218}%

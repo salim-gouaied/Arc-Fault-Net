@@ -1,0 +1,183 @@
+\section{Fondements technologiques et état de l'art}
+
+Cette section regroupe les notions techniques nécessaires à la compréhension du projet. Elle présente les architectures front-end, les micro-frontends, la migration d'applications Angular, Module Federation, les grands modèles de langage, le concept d'Agentic AI, l'automatisation et l'orchestration multi-agents.
+
+\subsection{Évolution des architectures front-end}
+
+Les applications web sont passées d'interfaces simples, souvent générées côté serveur, à des applications riches construites avec des frameworks front-end. Cette évolution a amélioré l'interactivité et la réutilisation des composants, mais elle a aussi augmenté la taille du code, le nombre de dépendances et la complexité de maintenance.
+
+Dans ce contexte, l'architecture devient un facteur important de maîtrise du projet. Une application peut rester monolithique lorsque son périmètre est limité. Elle peut aussi être structurée en modules internes, puis évoluer vers des micro-frontends lorsque les domaines fonctionnels, les équipes et les cycles de livraison doivent être mieux séparés.
+
+\subsection{Architecture front-end monolithique}
+
+Une architecture front-end monolithique regroupe l'ensemble de l'interface utilisateur dans une seule application. Les composants, les services, le routage, les styles, la configuration et les dépendances sont maintenus dans un même projet et livrés comme une unité unique.
+
+Cette organisation est souvent pertinente au démarrage d'un projet, car elle simplifie la configuration, le routage et le déploiement. Ses limites apparaissent lorsque le périmètre fonctionnel s'étend : les relations entre fichiers deviennent plus difficiles à suivre, les dépendances internes se multiplient et plusieurs équipes doivent intervenir dans le même cycle de livraison.
+
+Le tableau~\ref{tab:forces-limites-monolithe} résume les principaux atouts d'une architecture front-end monolithique ainsi que les limites qui peuvent motiver une démarche de migration.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{6.8cm}|p{6.8cm}|}
+\caption{Forces et limites d'une architecture front-end monolithique}\label{tab:forces-limites-monolithe}\\
+\hline
+\textbf{Forces} & \textbf{Limites} \\
+\hline
+Mise en place rapide et structure initiale simple & Croissance du code plus difficile à maîtriser \\
+\hline
+Déploiement unique et configuration centralisée & Dépendances internes nombreuses et parfois implicites \\
+\hline
+Compréhension globale plus facile au démarrage & Risque d'effets de bord lors des modifications \\
+\hline
+Adapté aux petites équipes et aux périmètres stables & Collaboration plus complexe lorsque plusieurs équipes interviennent \\
+\hline
+\end{longtable}
+\endgroup
+
+Ces limites ne rendent pas le monolithe systématiquement inadapté. Elles indiquent surtout qu'un autre style d'architecture peut devenir nécessaire lorsque l'application doit évoluer plus vite, avec davantage d'autonomie entre domaines fonctionnels.
+
+\subsection{Architecture micro-frontend}
+
+\subsubsection{Définition et principe général}
+
+L'architecture micro-frontend applique au front-end une logique de découpage inspirée des microservices. Elle consiste à diviser une application en plusieurs sous-applications autonomes, chacune associée à un domaine fonctionnel précis et pouvant être développée, testée et maintenue de manière plus indépendante \cite{single_spa_microfrontend}.
+
+Pour l'utilisateur final, l'application reste perçue comme une interface unique. Sur le plan technique, cette interface est composée de plusieurs parties intégrées dans une même expérience globale. La figure~\ref{fig:mfe_independent_deploy} illustre ce principe : plusieurs micro-frontends sont construits séparément, puis assemblés dans une application finale.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mfe.png}
+    \caption{Illustration du déploiement indépendant de plusieurs micro-frontends \cite{aymax_microfrontends}}
+    \label{fig:mfe_independent_deploy}
+\end{figure}
+
+\subsubsection{Fondements d'une architecture micro-frontend : Shell et Remotes}
+
+Dans une architecture micro-frontend, nous distinguons généralement une application hôte, appelée \textit{Shell}, et des applications distantes, appelées \textit{Remotes}. Le \textit{Shell} constitue le point d'entrée global : il porte la navigation principale, charge les micro-frontends et compose l'interface finale présentée à l'utilisateur \cite{single_spa_microfrontend,nx_microfrontend}.
+
+Les \textit{Remotes} représentent les parties fonctionnelles intégrées au \textit{Shell}. Chaque \textit{Remote} doit correspondre à un domaine métier cohérent, par exemple un espace utilisateur, un catalogue ou un module d'administration. La qualité de cette séparation dépend donc des frontières fonctionnelles, mais aussi du routage, du partage des dépendances et de la stratégie de build.
+
+\subsubsection{Module Federation}
+
+Module Federation est une fonctionnalité de Webpack 5 permettant à plusieurs applications construites séparément d'exposer et de consommer des modules au moment de l'exécution \cite{module_federation,webpack_module_federation_docs}. Dans une architecture micro-frontend, elle permet au \textit{Shell} de charger dynamiquement des modules exposés par les \textit{Remotes} sans les intégrer dans un bundle unique au moment de la compilation.
+
+Le principe repose sur deux configurations complémentaires. Côté \textit{Remote}, l'option \texttt{exposes} déclare les modules rendus accessibles via un point d'entrée distant, souvent nommé \texttt{remoteEntry.js}. Côté \textit{Shell}, l'option \texttt{remotes} déclare les applications distantes qui peuvent être chargées \cite{webpack_module_federation_plugin}. Le partage des bibliothèques communes est configuré à travers \texttt{shared}, afin de réduire les duplications et les conflits de versions \cite{module_federation_shared,nx_mf_versions}.
+
+Dans le cas d'Angular, ce partage doit être contrôlé avec attention. Des bibliothèques comme \texttt{@angular/core}, \texttt{@angular/common}, \texttt{@angular/router} et \texttt{rxjs} doivent rester cohérentes entre le \textit{Shell} et les \textit{Remotes}. Le tableau~\ref{tab:module-federation-elements} regroupe les éléments de configuration les plus sensibles pour une application Angular basée sur Module Federation.
+
+\begingroup
+\renewcommand{\arraystretch}{1.08}
+\begin{longtable}{|p{3.8cm}|p{5.4cm}|p{5.2cm}|}
+\caption{Éléments critiques dans une configuration Module Federation}\label{tab:module-federation-elements}\\
+\hline
+\textbf{Élément} & \textbf{Rôle} & \textbf{Point de validation} \\
+\hline
+\texttt{remoteEntry.js} & Point d'entrée généré par la \textit{Remote}. & Vérifier l'adresse distante et la disponibilité du fichier. \\
+\hline
+\texttt{exposes} & Modules rendus accessibles par une \textit{Remote}. & Vérifier que chaque module exposé existe réellement. \\
+\hline
+\texttt{remotes} & Applications distantes déclarées côté \textit{Shell}. & Vérifier la cohérence entre les noms déclarés côté \textit{Shell} et côté \textit{Remote}. \\
+\hline
+\texttt{shared} & Dépendances mutualisées entre applications fédérées. & Vérifier le partage des bibliothèques Angular et RxJS. \\
+\hline
+\texttt{singleton} & Usage d'une seule instance d'une dépendance partagée. & L'activer pour les dépendances Angular critiques. \\
+\hline
+\texttt{requiredVersion} et \texttt{strictVersion} & Contrôle de compatibilité des versions. & Détecter les versions incompatibles avant l'exécution. \\
+\hline
+Routes associées & Liaison entre la navigation du \textit{Shell} et les modules distants. & Vérifier que chaque route pointe vers la bonne \textit{Remote}. \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsubsection{Modes d'intégration}
+
+Deux modes d'intégration sont généralement distingués. Dans l'intégration à la compilation, les parties à intégrer sont connues lors de la construction de l'application. Cette approche facilite certains contrôles, mais réduit l'indépendance des modules, car une modification importante peut imposer une reconstruction globale.
+
+Dans l'intégration à l'exécution, le \textit{Shell} charge les \textit{Remotes} dynamiquement, par exemple avec Module Federation. Cette stratégie favorise l'indépendance des livraisons, mais elle impose une configuration plus rigoureuse des points d'exposition, des versions et des dépendances partagées.
+
+Le choix de la granularité reste également important. Une granularité trop fine multiplie les points d'intégration ; une granularité trop large conserve une partie des limites du monolithe. Dans une migration, la granularité doit donc être guidée par les domaines fonctionnels plutôt que par la seule structure des dossiers.
+
+\subsubsection{Points de vigilance}
+
+Les micro-frontends apportent de la modularité, mais ils introduisent aussi des contraintes qu'il faut maîtriser. Les principaux points de vigilance sont synthétisés dans le tableau~\ref{tab:vigilance-mfe}.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|p{4cm}|p{10cm}|}
+\caption{Points de vigilance dans une architecture micro-frontend}\label{tab:vigilance-mfe}\\
+\hline
+\textbf{Point de vigilance} & \textbf{Explication} \\
+\hline
+Frontières fonctionnelles & Les \textit{Remotes} doivent correspondre à des domaines cohérents et non à un découpage arbitraire. \\
+\hline
+Dépendances partagées & Les bibliothèques communes doivent être gérées pour éviter les conflits et les duplications inutiles. \\
+\hline
+Routage & La navigation globale et les routes internes doivent rester compréhensibles. \\
+\hline
+Expérience utilisateur & Les interfaces produites par plusieurs \textit{Remotes} doivent conserver une homogénéité visuelle et comportementale. \\
+\hline
+Observabilité & Les erreurs doivent pouvoir être localisées dans le \textit{Shell} ou dans la \textit{Remote} concernée. \\
+\hline
+\end{longtable}
+\endgroup
+
+\subsection{Migration vers les micro-frontends}
+
+La migration vers les micro-frontends transforme progressivement une application existante en un ensemble de sous-applications plus autonomes. Elle s'appuie sur deux décisions liées : choisir l'ordre d'extraction des fonctionnalités et définir les frontières fonctionnelles de chaque futur micro-frontend.
+
+\subsubsection{Migration progressive et découpage fonctionnel}
+
+Une migration progressive limite les risques en évitant une réécriture complète. Elle commence souvent par un domaine isolable, dont les routes, composants et services sont clairement identifiables. Par exemple, dans une application de gestion, un espace \og catalogue \fg{} peut être extrait en premier s'il possède ses propres pages, ses services d'accès aux données et peu de dépendances avec les autres domaines.
+
+Le découpage fonctionnel consiste donc à regrouper les éléments du code selon leur rôle métier. Dans une application Angular, cette analyse doit tenir compte des modules, composants, services injectables, routes, dépendances partagées et relations entre les différentes parties de l'application. Un bon découpage évite deux dérives opposées : une fragmentation trop fine, qui alourdit l'intégration, et une séparation trop large, qui reproduit le monolithe initial.
+
+\subsubsection{Risques liés à la migration}
+
+La migration vers une architecture micro-frontend expose le projet à plusieurs niveaux de risques. Sur le plan fonctionnel, une fonctionnalité extraite sans toutes ses dépendances métier peut devenir incomplète ou incohérente. Sur le plan technique, des erreurs peuvent apparaître dans le routage, les imports, les dépendances partagées ou la configuration de build.
+
+Sur le plan architectural, un mauvais découpage peut produire des \textit{Remotes} trop dépendantes les unes des autres, ou au contraire trop nombreuses. Sur le plan opérationnel, le déploiement séparé du \textit{Shell} et des \textit{Remotes} nécessite une compatibilité maîtrisée entre versions. Enfin, la dimension organisationnelle doit être anticipée : lorsque plusieurs équipes interviennent, il faut définir des conventions communes, des responsabilités claires et des règles de cohérence visuelle.
+
+\subsection{Angular : composants, services et routage dans le contexte d'une migration}
+
+Le choix d'Angular dans ce projet n'est pas théorique : la solution vise précisément des applications Angular monolithiques à migrer vers une architecture micro-frontend. Angular est structuré autour de composants, de services, de routes et d'un système d'injection de dépendances \cite{angular_docs}. Ces éléments constituent donc les unités principales à analyser avant toute migration.
+
+Dans une application Angular, un composant ne se résume pas à un fichier TypeScript. Il est généralement lié à un template HTML, à des styles CSS ou SCSS, à des imports, à des services injectés et parfois à des modèles de données. Le routage associe ensuite des chemins applicatifs à ces composants. Une migration doit donc traiter ces éléments comme un ensemble cohérent, et non comme des fichiers indépendants.
+
+La figure~\ref{fig:angular-architecture-migration} illustre cette organisation et met en évidence deux périmètres candidats de migration : un premier \textit{Remote} regroupant les éléments liés aux composants A et B, et un second centré sur le composant C. Elle distingue également les services spécifiques, les services partagés, les modèles/types communs, les dépendances UI mutualisées et les interactions avec l'API/backend.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/angular_architecture_migration_updated.png}
+\caption{Architecture d'une application Angular à analyser avant une migration vers des micro-frontends}
+\label{fig:angular-architecture-migration}
+\end{figure}
+
+Ainsi, l'analyse d'une application Angular ne doit pas se limiter à la structure des dossiers. Elle doit identifier les dépendances existantes, les services spécifiques et partagés, les modèles communs et les ressources UI mutualisées, afin de définir des périmètres de \textit{Remotes} cohérents et de limiter les erreurs lors de la migration.
+
+
+\subsection{Large Language Models}
+
+Un \textit{Large Language Model} (LLM) est un modèle de langage de grande taille entraîné sur de vastes corpus textuels afin d'apprendre des régularités linguistiques, sémantiques et contextuelles. Les LLM modernes reposent majoritairement sur l'architecture Transformer, introduite par Vaswani et al., qui utilise des mécanismes d'attention pour modéliser les relations entre les tokens d'une séquence \cite{vaswani_attention_2017}. À grande échelle, ces modèles peuvent réaliser des tâches variées à partir d'instructions ou d'exemples fournis dans le prompt, comme l'ont montré Brown et al. avec GPT-3 et l'apprentissage \textit{few-shot} \cite{brown_language_models_2020}. Dans un contexte d'ingénierie logicielle, nous pouvons les mobiliser pour assister l'analyse, la génération de code, la documentation ou la reformulation, mais leurs sorties doivent rester contrôlées par des règles, des tests et des validations, car elles peuvent contenir des erreurs ou des propositions non conformes au projet.
+
+\subsection{Agentic AI}
+
+Le concept d'\textit{Agentic AI} désigne des systèmes d'intelligence artificielle capables de poursuivre un objectif en combinant compréhension du contexte, raisonnement, planification, utilisation d'outils et production d'actions dans un environnement. Cette notion prolonge celle d'agent intelligent, défini dans la littérature comme une entité située dans un environnement et capable d'agir de manière autonome pour atteindre des objectifs \cite{wooldridge_jennings_intelligent_agents_1995,wooldridge_introduction_2009}. Dans les systèmes récents, un LLM peut jouer le rôle de noyau de raisonnement, tandis que des outils externes permettent d'observer l'état du système, de lire des fichiers, de générer des artefacts ou de vérifier un résultat. Des approches comme ReAct montrent l'intérêt d'alterner raisonnement et actions afin de mieux contrôler les tâches complexes \cite{yao_react_2023}. Dans notre projet, cette logique justifie la séparation entre agents spécialisés, état partagé, orchestrateur et validateurs.
+
+\subsection{Automatisation de la migration}
+
+L'automatisation de la migration vise à exécuter de manière reproductible les tâches répétitives : extraction d'informations, génération de fichiers, adaptation d'imports, réorganisation des routes et vérification des artefacts produits. Elle ne remplace pas la décision d'architecture, mais elle réduit l'effort manuel et rend les transformations plus traçables.
+
+Plusieurs techniques sont mobilisables. L'analyse statique du code, éventuellement fondée sur l'AST, permet d'identifier les composants, services, routes, imports et dépendances sans exécuter l'application \cite{typescript_compiler_api,ts_morph}. La génération par modèles produit des structures répétitives, comme les fichiers de configuration ou de routage \cite{angular_schematics,nx_generators}. Les transformations de code, ou \textit{codemods}, permettent ensuite d'appliquer des modifications à grande échelle, par exemple sur les chemins d'importation ou les déclarations de modules \cite{jscodeshift,openrewrite}.
+
+Les modèles de langage peuvent compléter ces techniques pour proposer un regroupement fonctionnel ou produire une documentation lisible. Ils doivent toutefois être encadrés par des règles et des validateurs, car les décisions critiques doivent rester vérifiables. LangGraph s'inscrit dans cette logique lorsqu'il est utilisé pour orchestrer un workflow avec état, transitions contrôlées et possibilités de reprise \cite{langgraph_docs,langgraph_durable_execution}.
+
+\subsection{Systèmes multi-agents et orchestration}
+
+Un système multi-agent répartit un problème complexe entre plusieurs agents spécialisés. Dans le cas d'une migration automatisée, cette approche permet de distinguer les tâches d'analyse, de conception, de génération, de transformation et de validation, au lieu de les concentrer dans un traitement unique.
+
+Dans son ouvrage \textit{Building Applications with AI Agents: Designing and Implementing Multiagent Systems}, Michael Albada présente notamment le modèle, les outils, la mémoire et l'orchestration comme des éléments structurants d'une application agentique \cite{albada_agents}. Ces notions sont utiles pour concevoir un workflow de migration : les agents ont besoin d'outils pour analyser ou générer, d'une mémoire partagée pour conserver les artefacts intermédiaires et d'un mécanisme d'orchestration pour contrôler l'ordre des étapes.
+
+L'orchestration est particulièrement importante lorsque le processus n'est pas strictement linéaire. Un graphe de workflow permet de représenter les étapes, les transitions conditionnelles, les arrêts en cas d'erreur et les reprises éventuelles. Cette organisation prépare le passage vers le chapitre suivant, où l'architecture proposée détaille concrètement l'orchestrateur, l'état partagé, les agents et les validateurs du pipeline.
+
+\paragraph{Synthèse.}
+Les notions présentées dans cette section constituent le socle théorique du projet. Elles expliquent pourquoi la migration d'un monolithe Angular vers des micro-frontends nécessite une analyse structurée, une automatisation contrôlée, une orchestration multi-agents et des mécanismes de validation progressive.

@@ -1,0 +1,13 @@
+\babel@toc {english}{}\relax 
+\babel@toc {french}{}\relax 
+\babel@toc {english}{}\relax 
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {1.1}{\ignorespaces Target multi-model detection system. The final decision is taken by voting among complementary experts over a multi-cycle observation window. This internship designs and validates Expert~1 (solid box); the dashed experts and their integration constitute the planned continuation of the work.}}{5}{figure.caption.21}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Overview of the processing chain: offline dataset construction (top) and per-cycle inference (bottom).}}{18}{figure.caption.53}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Arc-FaultNet architecture ($\approx $~315k parameters). Each branch analyzes one view of the same cycle; the bidirectional cross-attention aligns and fuses them before classification.}}{23}{figure.caption.74}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Detailed data flow of the bidirectional cross-attention fusion module. Both branch outputs are intercepted \emph {before} pooling, keeping their temporal dimension $T = 64$; $1{\times }1$ convolutions project them into queries, keys and values; each branch's queries attend to the other branch's keys/values (dashed arrows mark the cross-branch paths); residual connections and layer normalization stabilize training before pooling and fusion.}}{26}{figure.caption.81}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {4.1}{\ignorespaces Performance trajectory of the single-cycle detector over the internship (test accuracy on the current evaluation protocol of each date).}}{30}{figure.caption.101}%
+\addvspace {10\p@ }

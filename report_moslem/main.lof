@@ -1,0 +1,58 @@
+\babel@toc {french}{}\relax 
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {1.1}{\ignorespaces Illustration du déploiement indépendant de plusieurs micro-frontends \cite {aymax_microfrontends}}}{12}{figure.caption.35}%
+\contentsline {figure}{\numberline {1.2}{\ignorespaces Architecture d'une application Angular à analyser avant une migration vers des micro-frontends}}{15}{figure.caption.46}%
+\contentsline {figure}{\numberline {1.3}{\ignorespaces Déroulement général du processus Scrum \cite {scrum_figure}}}{20}{figure.caption.59}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {2.1}{\ignorespaces Diagramme de cas d'utilisation global de l'outil de migration}}{24}{figure.caption.68}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces Application du pattern Orchestrator--Subagent dans le pipeline de migration}}{27}{figure.caption.76}%
+\contentsline {figure}{\numberline {2.3}{\ignorespaces Organisation du processus de migration selon le Pipeline Pattern}}{28}{figure.caption.78}%
+\contentsline {figure}{\numberline {2.4}{\ignorespaces Utilisation d'un état partagé pour coordonner les agents du pipeline}}{28}{figure.caption.80}%
+\contentsline {figure}{\numberline {2.5}{\ignorespaces Contrôle des artefacts produits à travers le pattern Generator--Verifier}}{29}{figure.caption.82}%
+\contentsline {figure}{\numberline {2.6}{\ignorespaces Architecture globale du pipeline de migration multi-agents}}{30}{figure.caption.84}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Diagramme d'activité UML du workflow du Sprint 1}}{43}{figure.caption.110}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Diagramme de composants UML de l'orchestrateur et de l'état partagé}}{44}{figure.caption.112}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Diagramme d'activité UML du pipeline de conception et de validation du Sprint 2}}{47}{figure.caption.120}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces Diagramme de composants UML de l'agent de délimitation des domaines métier}}{48}{figure.caption.122}%
+\contentsline {figure}{\numberline {3.5}{\ignorespaces Diagramme de composants UML de l'agent de conception du plan directeur de migration}}{49}{figure.caption.124}%
+\contentsline {figure}{\numberline {3.6}{\ignorespaces Diagramme d'activité UML du pipeline de génération structurelle du Sprint 3}}{51}{figure.caption.131}%
+\contentsline {figure}{\numberline {3.7}{\ignorespaces Diagramme de composants UML de l'agent de génération de l'environnement de travail du projet et du Shell}}{52}{figure.caption.133}%
+\contentsline {figure}{\numberline {3.8}{\ignorespaces Diagramme de composants UML de l'agent de génération des squelettes Remote}}{53}{figure.caption.135}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {4.1}{\ignorespaces Diagramme d'activité du Sprint 4}}{57}{figure.caption.147}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces Diagramme d'activité du Sprint 5}}{61}{figure.caption.161}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces Diagramme d'activité du Sprint 6}}{64}{figure.caption.168}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Écran d'accueil du migrateur IA}}{67}{figure.caption.177}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Vue globale de l'interface de configuration du migrateur}}{67}{figure.caption.178}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces Sélection du chemin du projet source avant le lancement}}{68}{figure.caption.179}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces Configuration d'une migration à partir d'un chemin local}}{69}{figure.caption.180}%
+\contentsline {figure}{\numberline {5.5}{\ignorespaces Démarrage de l'exécution de la migration}}{70}{figure.caption.182}%
+\contentsline {figure}{\numberline {5.6}{\ignorespaces Point de contrôle manuel après l'analyse des domaines}}{70}{figure.caption.183}%
+\contentsline {figure}{\numberline {5.7}{\ignorespaces Validation du point de contrôle et poursuite de l'exécution}}{71}{figure.caption.184}%
+\contentsline {figure}{\numberline {5.8}{\ignorespaces Suivi des étapes du pipeline de migration}}{71}{figure.caption.185}%
+\contentsline {figure}{\numberline {5.9}{\ignorespaces Pipeline de migration avec plusieurs étapes validées}}{72}{figure.caption.186}%
+\contentsline {figure}{\numberline {5.10}{\ignorespaces Point de contrôle manuel après la migration du routage}}{72}{figure.caption.187}%
+\contentsline {figure}{\numberline {5.11}{\ignorespaces Fin de migration avec génération des artefacts}}{73}{figure.caption.188}%
+\contentsline {figure}{\numberline {5.12}{\ignorespaces Téléchargement du workspace migré et du rapport de migration}}{73}{figure.caption.189}%
+\contentsline {figure}{\numberline {5.13}{\ignorespaces Extraction du workspace généré}}{74}{figure.caption.191}%
+\contentsline {figure}{\numberline {5.14}{\ignorespaces Ouverture du dossier généré depuis l'explorateur}}{75}{figure.caption.192}%
+\contentsline {figure}{\numberline {5.15}{\ignorespaces Ouverture du projet généré dans Visual Studio Code}}{75}{figure.caption.193}%
+\contentsline {figure}{\numberline {5.16}{\ignorespaces Projet généré affiché dans Visual Studio Code}}{76}{figure.caption.194}%
+\contentsline {figure}{\numberline {5.17}{\ignorespaces Lancement du Shell généré depuis le terminal}}{77}{figure.caption.196}%
+\contentsline {figure}{\numberline {5.18}{\ignorespaces Installation des dépendances du projet généré}}{77}{figure.caption.197}%
+\contentsline {figure}{\numberline {5.19}{\ignorespaces Initialisation du lancement du projet généré}}{78}{figure.caption.198}%
+\contentsline {figure}{\numberline {5.20}{\ignorespaces Démarrage du Shell généré}}{78}{figure.caption.199}%
+\contentsline {figure}{\numberline {5.21}{\ignorespaces Lancement d'une application distante générée}}{79}{figure.caption.200}%
+\contentsline {figure}{\numberline {5.22}{\ignorespaces Démarrage des applications générées}}{79}{figure.caption.201}%
+\contentsline {figure}{\numberline {5.23}{\ignorespaces Construction et compilation du projet généré}}{80}{figure.caption.202}%
+\contentsline {figure}{\numberline {5.24}{\ignorespaces Fin de compilation des applications générées}}{80}{figure.caption.203}%
+\contentsline {figure}{\numberline {5.25}{\ignorespaces Page de connexion de l'application générée}}{81}{figure.caption.205}%
+\contentsline {figure}{\numberline {5.26}{\ignorespaces Liste des clients dans l'application générée}}{82}{figure.caption.206}%
+\contentsline {figure}{\numberline {5.27}{\ignorespaces Tableau de bord de l'application générée}}{82}{figure.caption.207}%
+\contentsline {figure}{\numberline {5.28}{\ignorespaces Formulaire de création d'un questionnaire}}{83}{figure.caption.208}%
+\contentsline {figure}{\numberline {5.29}{\ignorespaces Liste des dossiers de crédit}}{83}{figure.caption.209}%
+\contentsline {figure}{\numberline {5.30}{\ignorespaces Liste détaillée des clients}}{84}{figure.caption.210}%
+\contentsline {figure}{\numberline {5.31}{\ignorespaces Tableau des dossiers de crédit après migration}}{84}{figure.caption.211}%
+\contentsline {figure}{\numberline {5.32}{\ignorespaces Tableau de bord final de l'application générée}}{85}{figure.caption.212}%
