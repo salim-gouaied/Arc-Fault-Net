@@ -257,6 +257,9 @@ Citing a journal paper \citep{ref-journal}.  Now citing a book reference \citep{
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Materials and Methods}
 
+\subsection{Experimental Setup and Dataset}
+\label{sec:setup_dataset}
+
 The experimental platform, illustrated in Figure 1, emulates a typical residential AC power network. The configuration consists of a 230 V, 50 Hz power supply (Domestical power network), a dedicated arc fault generator and various household appliances arranged in either a combination of single loads  or masking load masking configurations. The process to generate a series arcing fault is done using the opening contacts mode between two copper electrodes (6 millimeters diameters).
 
 \begin{figure}[htb]
@@ -322,7 +325,7 @@ Jigsaw            & -- & -- & -- & A & A & M & A & M \\
 
 An initial step in labeling the main dataset (training and validation datasets) must be completed. The operational state of each point from the electrical current line signature is determined by evaluating the corresponding arc voltage. Under ideal conditions, the absence of an arc is reflected by a zero-voltage baseline, while actual arcing activity produces a distinct potential rise. A predefined voltage threshold of 13 Volts is established; segments surpassing this limit are designated as faulty. Accordingly, a binary labeling scheme is applied, assigning a value of '1' to active arc occurrences and '0' to normal operating conditions.
 
-\subsection{Dataset Composition}
+\subsubsection{Dataset Composition}
 \label{sec:dataset_composition}
 
 The dataset used in this work contains a total of \textbf{10\,860 labeled current cycles}, assembled from two experimental campaigns acquired on the bench of Figure~\ref{fig:iec}. The first campaign (referred to as the \emph{July} data) contributes \textbf{9\,386 cycles} collected over three independent acquisition sessions. The second campaign (referred to as the \emph{Othmane--Salim} data) contributes \textbf{1\,474 additional cycles}, which correspond to 80\% of that campaign; the remaining 20\% (\textbf{368 cycles}) were set aside \emph{before} the dataset was assembled and were never used for training or model selection, being reserved as a fully independent hold-out set for final evaluation. Across the 10\,860 cycles, the class distribution is 5\,898 normal and 4\,962 arcing cycles, i.e. a nearly balanced binary problem. Table~\ref{tab:dataset_composition} summarizes this composition.
@@ -352,7 +355,7 @@ Othmane--Salim data (remaining 20\%)     & 368     & Independent hold-out (final
 \noindent{\footnotesize Class balance within the 10\,860 cycles: 5\,898 normal / 4\,962 arc.}
 \end{table}
 
-\subsection{Signal Conditioning}
+\subsubsection{Signal Conditioning}
 \label{sec:signal_conditioning}
 
 Each recording is segmented into individual 50~Hz cycles using the mains voltage C1 rather than the current C3: because C1 is sinusoidal and load-independent, its positive-going zero crossings provide consistent cycle boundaries regardless of the connected load or of the presence of an arc, whereas the current waveform is precisely the quantity distorted by the phenomenon to be detected. Consecutive zero crossings, validated by their expected spacing, delimit one complete cycle.
@@ -361,9 +364,115 @@ Every extracted cycle is then decimated from the native sampling rate of 1~MHz (
 
 Finally, each current cycle is independently normalized by a per-cycle z-score, $\hat{x} = (x - \mu_x)/\sigma_x$. This enforces amplitude invariance by construction: since different loads draw currents of very different magnitudes, absolute amplitude is a load-specific, non-transferable feature, whereas the arc signature is carried by the \emph{morphology} of the waveform (discontinuities, flat shoulders, harmonic content). Normalizing per cycle removes the amplitude shortcut and forces the model to rely on load-invariant morphological cues.
 
-# \begin{quote}
-# This is an example of a quote.
-# \end{quote}
+\subsection{Signal Descriptors and Their Physical Role}
+\label{sec:descriptors}
+
+Rather than presenting the raw current waveform to the network, Arc-FaultNet expands each conditioned cycle into a bank of four physically complementary descriptors, all derived from the single line-current channel~$I$. Let $I[n]$, $n = 0,\dots,M-1$ with $M = 2048$, denote the samples of one decimated 50~Hz cycle. Each cycle is first made amplitude-invariant by a per-cycle root-mean-square (RMS) normalization,
+\begin{equation}
+\tilde{I}[n] \;=\; \frac{I[n]}{\sqrt{\tfrac{1}{M}\sum_{m=0}^{M-1} I[m]^{2} + \varepsilon}},
+\qquad \varepsilon = 10^{-12}.
+\label{eq:rmsnorm}
+\end{equation}
+For a zero-mean alternating current this coincides with the per-cycle $z$-score of Section~\ref{sec:signal_conditioning}. Because different appliances draw currents of very different magnitudes, the absolute amplitude is a load-specific, non-transferable quantity; dividing each cycle by its own RMS removes this amplitude shortcut and forces the network to rely on waveform \emph{morphology}. Every descriptor below is computed from $\tilde{I}$, so the entire temporal front-end is load-invariant by construction --- the property that seeds the generalization behaviour analyzed in Section~\ref{sec:disc_gen}.
+
+The four channels $\big[\,\tilde{I},\ |\Delta I|,\ \Psi,\ R\,\big] \in \mathbb{R}^{4\times M}$ are:
+
+\begin{itemize}
+\item \textbf{Normalized current $\tilde{I}$} --- the global waveform shape, preserving the 50~Hz envelope and its gross distortions.
+\item \textbf{Rectified first difference $|\Delta I|$},
+\begin{equation}
+|\Delta I|[n] \;=\; \big|\,\tilde{I}[n]-\tilde{I}[n-1]\,\big|,
+\label{eq:absdi}
+\end{equation}
+the magnitude of the discrete derivative. It is essentially zero for smooth, stable (non-arc) waveforms and produces sharp peaks exactly at the current discontinuities caused by arc re-ignition. Since re-ignition transients accompany arcing on \emph{every} load type, $|\Delta I|$ is the single most load-independent arc cue, and the descriptor most emphasized in the generalization argument.
+\item \textbf{Teager--Kaiser energy operator $\Psi$},
+\begin{equation}
+\Psi[n] \;=\; \tilde{I}[n]^{2} - \tilde{I}[n-1]\,\tilde{I}[n+1],
+\label{eq:tkeo}
+\end{equation}
+which tracks the instantaneous energy of the signal and responds strongly to the abrupt, sub-cycle ignition and extinction bursts of series arcing while remaining small for a clean sinusoid.
+\item \textbf{Sliding RMS envelope $R$}, a centered moving RMS over a window of $W=M/4$ samples,
+\begin{equation}
+R[n] \;=\; \sqrt{\tfrac{1}{W}\!\sum_{k\in\mathcal{W}(n)}\!\tilde{I}[k]^{2} + \varepsilon},
+\label{eq:rmsslide}
+\end{equation}
+which exposes the amplitude envelope --- the flat ``shoulder'' and the characteristic current dip around the arc's zero-current pause.
+\end{itemize}
+
+In parallel, the same conditioned current is mapped to a log-power short-time Fourier transform (STFT), $\mathbf{X}_{2\mathrm{D}} = \log\!\big(|\mathrm{STFT}(I)|^{2}+10^{-10}\big) \in \mathbb{R}^{1\times F\times T}$, which captures the broadband high-frequency noise injected by the arc plasma. The temporal descriptor bank and this spectral map are the two inputs consumed by the model of Section~\ref{sec:architecture}.
+
+\subsection{Base Arc-FaultNet Architecture}
+\label{sec:architecture}
+
+Having fixed the data and the physically grounded descriptors, we now describe the detector itself. Arc-FaultNet is a lightweight dual-branch convolutional network that analyzes a single 50~Hz cycle in two complementary representations and fuses them with cross-attention (Figure~\ref{fig:arch}): a \emph{temporal branch} consumes the four descriptor channels, a \emph{spectral branch} consumes the log-power STFT, and a \emph{sequential cross-attention} module lets the branches condition one another before a compact head outputs the arc probability. Throughout, $C=128$ denotes the per-branch channel width and $D=64$ the shared latent length.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{arcfaultnet_v2_architecture.png}
+\caption{Arc-FaultNet architecture. The line current of a single 50~Hz cycle feeds a temporal branch (four physically derived descriptors with descriptor channel attention) and a spectral branch (log-power STFT with a learnable frequency gate); a bidirectional sequential cross-attention module fuses the two before a compact classifier head returns $P(\mathrm{arc})$.\label{fig:arch}}
+\end{figure}
+
+\subsubsection{Temporal branch with descriptor channel attention}
+The temporal branch maps $\mathbf{X}_{1\mathrm{D}}\in\mathbb{R}^{4\times M}$ through three 1-D convolutional blocks (kernel sizes $16,8,4$; widths $4\!\to\!32\!\to\!64\!\to\!128$; each block Conv1d--BatchNorm--GELU), with max-pooling between blocks and a final adaptive average pooling to length $D$, yielding $\mathbf{F}_{t}\in\mathbb{R}^{C\times D}$. A \emph{descriptor channel attention} (DCA) module recalibrates the channels --- once on the four raw descriptors, and again after each convolutional block. Unlike Squeeze-and-Excitation, which summarizes each channel by average pooling alone, DCA uses \emph{both} average and maximum pooling over time through a shared bottleneck MLP:
+\begin{equation}
+\mathbf{w} = \sigma\!\Big(\mathrm{MLP}\big(\mathrm{avg}_{t}\mathbf{F}\big) + \mathrm{MLP}\big(\textstyle\max_{t}\mathbf{F}\big)\Big),
+\qquad \mathbf{F}' = \mathbf{w}\odot\mathbf{F},
+\label{eq:dca}
+\end{equation}
+with $\mathbf{w}\in(0,1)^{C}$. The maximum term is essential here: the discriminative descriptors ($|\Delta I|$, $\Psi$) are quiet on average but spike sharply, so an average-only squeeze would dilute precisely the peaks that carry the arc signature. Because the input is already per-cycle normalized, DCA weights channels by their \emph{shape} rather than their amplitude, emphasizing the load-invariant descriptors so that the weighting transfers across appliances.
+
+\subsubsection{Spectral branch with a learnable frequency gate}
+The spectral branch processes the log-power STFT $\mathbf{X}_{2\mathrm{D}}\in\mathbb{R}^{1\times F\times T}$ (with $n_{\mathrm{fft}}=128$ and hop $=64$, giving $F=65$ bins and $T=31$ frames). A \emph{frequency gate} first applies a learnable soft mask along the frequency axis,
+\begin{equation}
+\mathbf{X}' = \mathbf{X}_{2\mathrm{D}}\odot\sigma\!\big(\mathrm{Conv2d}_{3\times1}(\mathbf{X}_{2\mathrm{D}})\big),
+\label{eq:freqgate}
+\end{equation}
+replacing the hand-tuned fixed band-pass slice of earlier designs with a data-driven emphasis of the bands that carry arc information for the current load. Three 2-D convolutional blocks (Conv2d $3\times3$--BatchNorm--GELU; widths $1\!\to\!32\!\to\!64\!\to\!128$) with \emph{frequency-only} pooling follow, so the time resolution is preserved for cross-attention; adaptive pooling to four frequency groups $\times\,D$ frames and a $1\times1$ convolution collapse the map to $\mathbf{F}_{s}\in\mathbb{R}^{C\times D}$, matching the temporal branch.
+
+\subsubsection{Sequential cross-attention fusion}
+The branches meet in a bidirectional cross-attention module acting on the full $\mathbb{R}^{C\times D}$ sequences \emph{before} any global pooling, so alignment is position-by-position along the shared latent time axis. With multi-head projections ($4$ heads, $d_{k}=32$), the temporal queries attend to the spectral keys and values and vice versa:
+\begin{equation}
+\mathbf{A}_{t}=\mathrm{softmax}\!\Big(\tfrac{\mathbf{Q}_{t}\mathbf{K}_{s}^{\top}}{\sqrt{d_{k}}}\Big)\mathbf{V}_{s},
+\qquad
+\mathbf{A}_{s}=\mathrm{softmax}\!\Big(\tfrac{\mathbf{Q}_{s}\mathbf{K}_{t}^{\top}}{\sqrt{d_{k}}}\Big)\mathbf{V}_{t}.
+\label{eq:xattn}
+\end{equation}
+Each attended stream is added to its input through a residual connection with layer normalization, averaged over time, and the two resulting vectors are concatenated and projected by a GELU-activated linear layer to the fused embedding $\mathbf{z}\in\mathbb{R}^{C}$. Attending across time couples the branches only where a temporal event and a spectral event \emph{coincide} --- the mechanism invoked in Section~\ref{sec:disc_gen} to explain the rejection of load-induced false positives.
+
+\subsubsection{Classifier head}
+The base model uses a compact head: a linear layer $C\!\to\!64$ with GELU and dropout ($p=0.3$), then a linear layer $64\!\to\!1$ giving the logit, whose sigmoid is the arc probability, thresholded at $0.5$. The complete base model contains $307\,593$ parameters, distributed as $158\,788$ (spectral branch), $82\,944$ (cross-attention), $57\,540$ (temporal branch) and $8\,321$ (classifier).
+
+\subsection{Enhancement: Deep Classifier Head}
+\label{sec:deepclf}
+
+The only architectural add-on we consider is a deeper classifier head that replaces the two-layer head while leaving the two branches and the fusion untouched. It stacks three linear layers ($C\!\to\!64\!\to\!32\!\to\!1$) interleaved with batch normalization, GELU and progressively lighter dropout ($0.5$ then $0.3$):
+\begin{equation}
+\mathbf{z}\ \to\ \big[\,\mathrm{Lin}_{64}\text{–}\mathrm{BN}\text{–}\mathrm{GELU}\text{–}\mathrm{Drop}_{0.5}\,\big]\ \to\ \big[\,\mathrm{Lin}_{32}\text{–}\mathrm{BN}\text{–}\mathrm{GELU}\text{–}\mathrm{Drop}_{0.3}\,\big]\ \to\ \mathrm{Lin}_{1}.
+\label{eq:deephead}
+\end{equation}
+The batch normalization stabilizes the gradients and the heavier dropout regularizes the decision layer, at a cost of only $2\,240$ additional parameters ($309\,833$ in total, a $+0.7\%$ overhead). As shown in Section~\ref{sec:results}, this single change improves both accuracy and, notably, the seed-to-seed stability of the detector.
+
+\subsection{Training and Evaluation Protocol}
+\label{sec:training}
+
+Models are trained under a single-split protocol: the $10\,860$ labeled cycles are randomly partitioned into $70\%$ training, $15\%$ validation and $15\%$ test. Optimization uses AdamW (learning rate $3\times10^{-4}$, weight decay $5\times10^{-4}$), batch size $64$, gradient clipping at $0.5$, and a cosine-annealing-with-warm-restarts schedule ($T_{0}=10$, $T_{\mathrm{mult}}=2$), minimizing the binary cross-entropy on the logits with label smoothing of $0.05$. Training runs for up to $200$ epochs with early stopping (patience $10$): the epoch that maximizes a validation model-selection score is checkpointed and used for testing. To measure stability rather than a single fortunate initialization, every configuration is trained with several random seeds and reported as mean~$\pm$~standard deviation.
+
+Rather than selecting this checkpoint on the balanced F1-score, we monitor the validation $F_{\beta}$-score with $\beta = 0.5$,
+\begin{equation}
+F_{\beta} = \frac{(1+\beta^{2})\,\mathrm{Prec}\cdot\mathrm{Rec}}{\beta^{2}\,\mathrm{Prec} + \mathrm{Rec}}, \qquad \beta = 0.5,
+\label{eq:fbeta}
+\end{equation}
+the weighted harmonic mean of precision and recall in which precision receives four times the weight of recall ($1/(1+\beta^{2}) = 0.8$ against $\beta^{2}/(1+\beta^{2}) = 0.2$). The two error types of an arc-fault detector are not equally costly: a genuine arc that is momentarily missed can still be caught within the multi-cycle detection window prescribed by IEC~62606, whereas a false positive is a nuisance trip that disconnects a healthy load and erodes confidence in the protection device. As the two classes are close to balanced ($5\,898$ normal against $4\,962$ arc cycles), neither accuracy nor F1 encodes this asymmetry; monitoring $F_{0.5}$ makes model selection explicitly precision-oriented, retaining the checkpoint that best suppresses false positives while maintaining high recall. Its effect is examined in the false-positive analysis of Section~\ref{sec:disc_fp}.
+
+Detection quality is reported with accuracy, precision, recall (sensitivity), specificity and the F1-score, computed at the $0.5$ threshold from the confusion-matrix counts (TP, TN, FP, FN):
+\begin{equation}
+\mathrm{Prec}=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}},\quad
+\mathrm{Rec}=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},\quad
+\mathrm{Spec}=\frac{\mathrm{TN}}{\mathrm{TN}+\mathrm{FP}},\quad
+\mathrm{F1}=\frac{2\,\mathrm{Prec}\cdot\mathrm{Rec}}{\mathrm{Prec}+\mathrm{Rec}}.
+\label{eq:metrics}
+\end{equation}
+For an arc-fault detector, specificity (avoiding false trips on healthy loads) and recall (never missing a genuine arc) are the two operationally decisive quantities, and are discussed together in Section~\ref{sec:results}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Results}

@@ -83,30 +83,78 @@ class ArcSSMNet(nn.Module):
         dropout: float = 0.3,
         block_dropout: float = 0.1,
         deep_classifier: bool = False,
+        backbone: str = "s4d",
+        fas_k: int = 0,
+        fas_channels: tuple = (1, 2),
         **_ignore,   # swallow fs / n_fft / use_se / fusion_mode passed by get_model
     ):
         super().__init__()
+        if backbone not in ("s4d", "mamba"):
+            raise ValueError(f"backbone must be s4d|mamba, got {backbone!r}")
+        self.backbone = backbone
+
+        # ── FAS (Feature Amplification Strategy, DCAMamba 2025) ────────────
+        # Optional order-statistic front-end: per channel, keep the top-K and
+        # bottom-K values over time (2K total) and discard the rest — turning
+        # the cycle into a compact, TIME-ORDER-INVARIANT amplitude-distribution
+        # descriptor. DCAMamba applies it to a DC current (no fundamental); in
+        # AC the top/bottom of the raw 50 Hz sinusoid is just its ±peak, so we
+        # apply FAS only to the FUNDAMENTAL-SUPPRESSED channels (default |dI|
+        # and TKEO), where arc scatter — not the load sinusoid — dominates.
+        self.fas_k = int(fas_k)
+        self.fas_channels = list(fas_channels)
+        enc_in = len(self.fas_channels) if self.fas_k > 0 else in_channels
+
         self.encoder = nn.Conv1d(
-            in_channels, d_model, kernel_size=embed_kernel, padding=embed_kernel // 2
+            enc_in, d_model, kernel_size=embed_kernel, padding=embed_kernel // 2
         )
         self.enc_act = nn.GELU()
-        self.blocks = nn.ModuleList(
-            [
-                S4Block(d_model, d_state, bidirectional, selective, block_dropout)
-                for _ in range(n_layers)
-            ]
-        )
+
+        # ── sequence-mixing backbone ───────────────────────────────────────
+        # s4d   : LTI diagonal-COMPLEX S4D — a resonator filter bank (spectral
+        #         inductive bias, FFT-parallel). See arc_ssm.py.
+        # mamba : selective S6 (real diagonal, input-dependent Δ/B/C, causal
+        #         scan) — the DCAMamba backbone. Forced CAUSAL here: it halves
+        #         the (pure-PyTorch) scan cost and matches a real-time AFDD;
+        #         bidirectionality buys little on a fixed classification window.
+        if backbone == "s4d":
+            self.blocks = nn.ModuleList(
+                [
+                    S4Block(d_model, d_state, bidirectional, selective, block_dropout)
+                    for _ in range(n_layers)
+                ]
+            )
+        else:  # "mamba"
+            from mamba_block import BiMambaBlock  # lazy: s4d path stays decoupled
+            self.blocks = nn.ModuleList(
+                [
+                    BiMambaBlock(
+                        d_model, bidirectional=False, d_state=16, d_conv=4, expand=2
+                    )
+                    for _ in range(n_layers)
+                ]
+            )
+
         self.norm = nn.LayerNorm(d_model)
         self.to_embed = nn.Linear(d_model, 128)
         self.classifier = _build_classifier(
             128, classifier_hidden, dropout, deep_classifier
         )
 
+    def _apply_fas(self, x_1d: torch.Tensor) -> torch.Tensor:
+        """FAS front-end: per selected channel, concat top-K and bottom-K over
+        time → (B, len(fas_channels), 2K). Parameter-free (order statistics)."""
+        x = x_1d[:, self.fas_channels, :]                          # (B, C', M)
+        top = x.topk(self.fas_k, dim=-1, largest=True).values      # (B, C', K)
+        bot = x.topk(self.fas_k, dim=-1, largest=False).values     # (B, C', K)
+        return torch.cat([top, bot], dim=-1)                       # (B, C', 2K)
+
     def extract_embedding(
         self, x_1d: torch.Tensor, x_2d: torch.Tensor = None
     ) -> torch.Tensor:
         """Return the 128-d embedding (also consumable by a downstream tree head)."""
-        x = self.enc_act(self.encoder(x_1d))     # (B, H, L)  — full resolution
+        x = self._apply_fas(x_1d) if self.fas_k > 0 else x_1d  # (B, C, L) — L=2K if FAS
+        x = self.enc_act(self.encoder(x))        # (B, H, L)
         x = x.transpose(1, 2)                    # (B, L, H)
         for blk in self.blocks:
             x = blk(x)
@@ -142,9 +190,11 @@ if __name__ == "__main__":
     x_1d = torch.randn(B, 4, M)
 
     for name, kw in [
-        ("ArcSSM (S4D, bidir)   ", dict()),
-        ("ArcSSM (causal)       ", dict(bidirectional=False)),
-        ("ArcSSM (selective abl)", dict(selective=True, n_layers=2)),
+        ("ArcSSM (S4D, bidir)      ", dict()),
+        ("ArcSSM (S4D, causal)     ", dict(bidirectional=False)),
+        ("ArcSSM (S4D selective abl)", dict(selective=True, n_layers=2)),
+        ("ArcSSM (mamba, no FAS)   ", dict(backbone="mamba", n_layers=2)),
+        ("ArcSSM (mamba + FAS K=256)", dict(backbone="mamba", n_layers=2, fas_k=256)),
     ]:
         model = ArcSSMNet(**kw)
         logits, emb = model(x_1d, None, return_embedding=True)

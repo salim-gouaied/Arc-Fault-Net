@@ -9,7 +9,11 @@ Features:
   - AdamW optimizer with weight_decay
   - Gradient clipping
   - Optional pos_weight for class imbalance
-  - Early stopping on val_f1 (max) instead of val_loss
+  - Configurable early-stopping metric: val_f1 (default), val_precision,
+    val_recall, val_specificity, or val_fbeta (weighted F-score, β tunable)
+    via --monitor / --fbeta.  For arc-fault detection where false positives
+    (nuisance trips) are more costly than false negatives, use
+    --monitor val_fbeta --fbeta 0.5 to weight precision 4× over recall.
   - Leave-one-charge-out CV for proper generalization testing
   - Per-fold history.json and config.json
   - Model checkpointing (best + last)
@@ -240,6 +244,41 @@ def compute_pos_weight(labels: np.ndarray, device: torch.device) -> torch.Tensor
     return torch.tensor([weight], device=device)
 
 
+# ── Monitored-metric helper ────────────────────────────────────────────────
+_VALID_MONITORS = ('val_f1', 'val_precision', 'val_recall',
+                   'val_specificity', 'val_fbeta')
+
+def _monitor_score(val_metrics: Dict[str, float],
+                   monitor: str,
+                   fbeta: float = 1.0) -> float:
+    """Return the scalar value of the chosen early-stopping metric.
+
+    Args:
+        val_metrics: dict returned by evaluate().
+        monitor:     one of 'val_f1', 'val_precision', 'val_recall',
+                     'val_specificity', 'val_fbeta'.
+        fbeta:       β for F-beta score (only used when monitor='val_fbeta').
+                     β < 1 → precision-weighted (fewer false positives);
+                     β > 1 → recall-weighted.
+    """
+    if monitor == 'val_f1':
+        return val_metrics['f1']
+    elif monitor == 'val_precision':
+        return val_metrics['precision']
+    elif monitor == 'val_recall':
+        return val_metrics['recall']
+    elif monitor == 'val_specificity':
+        return val_metrics['specificity']
+    elif monitor == 'val_fbeta':
+        p  = val_metrics['precision']
+        r  = val_metrics['recall']
+        b2 = fbeta ** 2
+        return (1 + b2) * p * r / (b2 * p + r + 1e-8)
+    else:
+        raise ValueError(f"Unknown monitor metric '{monitor}'. "
+                         f"Choose from: {_VALID_MONITORS}")
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
@@ -255,10 +294,16 @@ def train_model(
     checkpoint_dir: Optional[Path] = None,
     writer: Optional[SummaryWriter] = None,
     fold_name: str = "",
-    channel_dropout: float = 0.0
+    channel_dropout: float = 0.0,
+    monitor: str = 'val_f1',
+    fbeta: float = 1.0
 ) -> Tuple[nn.Module, Dict]:
     """
-    Train model with early stopping on val_f1.
+    Train model with configurable early stopping.
+
+    monitor: metric to track — 'val_f1' | 'val_precision' | 'val_recall' |
+             'val_specificity' | 'val_fbeta'.
+    fbeta:   β for F-beta score (only when monitor='val_fbeta').
 
     Returns:
         model:   Best checkpoint reloaded
@@ -270,7 +315,9 @@ def train_model(
         optimizer, T_0=10, T_mult=2
     )
 
-    best_val_f1      = -1.0
+    if monitor not in _VALID_MONITORS:
+        raise ValueError(f"Unknown monitor '{monitor}'. Choose from: {_VALID_MONITORS}")
+    best_monitor_val = -1.0
     best_epoch       = 0
     patience_counter = 0
     best_state_dict  = None  # Always keep best weights in memory
@@ -314,9 +361,10 @@ def train_model(
             writer.add_scalar(f'{fold_name}/val_f1',      val_metrics['f1'],          epoch)
             writer.add_scalar(f'{fold_name}/lr',          current_lr,                 epoch)
 
-        # Early stopping on val_f1 (max)
-        if val_metrics['f1'] > best_val_f1:
-            best_val_f1      = val_metrics['f1']
+        # Early stopping on chosen monitor metric (max)
+        score = _monitor_score(val_metrics, monitor, fbeta)
+        if score > best_monitor_val:
+            best_monitor_val = score
             best_epoch       = epoch
             patience_counter = 0
             # Always save best weights in memory
@@ -339,15 +387,22 @@ def train_model(
                   f"lr={current_lr:.2e}")
 
         if patience_counter >= patience:
-            print(f"  Early stopping at epoch {epoch} (best epoch: {best_epoch}, best_val_f1={100*best_val_f1:.2f}%)")
+            print(f"  Early stopping at epoch {epoch} "
+                  f"(best epoch: {best_epoch}, "
+                  f"best {monitor}={100*best_monitor_val:.2f}%)")
             break
 
     # Reload best weights (from memory — works even without checkpoint_dir)
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
 
-    history['best_epoch']   = best_epoch
-    history['best_val_f1']  = best_val_f1
+    history['best_epoch']       = best_epoch
+    history['monitor']          = monitor
+    history['fbeta']            = fbeta
+    history['best_monitor_val'] = best_monitor_val
+    # Keep legacy key for backward-compat with evaluate.py / kfold_evaluate.py
+    history['best_val_f1']      = best_monitor_val if monitor == 'val_f1' \
+                                  else val_metrics.get('f1', float('nan'))
 
     # Save history JSON
     if checkpoint_dir:
@@ -384,7 +439,9 @@ def run_leave_one_charge_out_cv(
     fusion_mode: str = 'gated',
     use_channel_attn: bool = True,
     fs: float = 1_000_000,
-    n_fft: int = 512
+    n_fft: int = 512,
+    monitor: str = 'val_f1',
+    fbeta: float = 1.0
 ) -> Dict:
     """
     Run leave-one-charge-out cross-validation.
@@ -450,7 +507,8 @@ def run_leave_one_charge_out_cv(
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=run_dir, writer=writer,
-            fold_name=f"fold{fold_idx}_{charge_name}"
+            fold_name=f"fold{fold_idx}_{charge_name}",
+            monitor=monitor, fbeta=fbeta
         )
 
         # Test on held-out charge
@@ -585,7 +643,13 @@ def run_single_training(
     use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512,
-    channel_dropout: float = 0.0
+    channel_dropout: float = 0.0,
+    ssm_backbone: str = 's4d',
+    ssm_layers: int = 4,
+    fas_k: int = 0,
+    fas_channels: tuple = (1, 2),
+    monitor: str = 'val_f1',
+    fbeta: float = 1.0
 ) -> Dict:
     """
     Single training run with random train/val/test split.
@@ -641,6 +705,8 @@ def run_single_training(
                       deep_classifier=deep_classifier,
                       fusion_mode=fusion_mode,
                       use_channel_attn=use_channel_attn,
+                      ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
+                      fas_k=fas_k, fas_channels=fas_channels,
                       fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
@@ -651,7 +717,8 @@ def run_single_training(
         patience=patience, gradient_clip=gradient_clip,
         threshold=threshold, pos_weight=pw,
         checkpoint_dir=run_dir, writer=writer,
-        fold_name="single", channel_dropout=channel_dropout
+        fold_name="single", channel_dropout=channel_dropout,
+        monitor=monitor, fbeta=fbeta
     )
 
     criterion    = nn.BCEWithLogitsLoss()
@@ -680,6 +747,10 @@ def run_single_training(
         'use_amplitude':  use_amplitude,
         'deep_classifier': deep_classifier,
         'fusion_mode':    fusion_mode,
+        'ssm_backbone':   ssm_backbone,
+        'ssm_layers':     ssm_layers,
+        'fas_k':          fas_k,
+        'fas_channels':   list(fas_channels),
         'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
@@ -727,7 +798,9 @@ def run_kfold_cv(
     fusion_mode: str = 'gated',
     use_channel_attn: bool = True,
     fs: float = 1_000_000,
-    n_fft: int = 512
+    n_fft: int = 512,
+    monitor: str = 'val_f1',
+    fbeta: float = 1.0
 ) -> Dict:
     """
     Stratified K-Fold cross-validation.
@@ -801,7 +874,8 @@ def run_kfold_cv(
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
-            fold_name=f"fold_{fold_idx+1}"
+            fold_name=f"fold_{fold_idx+1}",
+            monitor=monitor, fbeta=fbeta
         )
 
         criterion    = nn.BCEWithLogitsLoss()
@@ -979,7 +1053,13 @@ def run_groupkfold_cv(
     use_channel_attn: bool = True,
     fs: float = 1_000_000,
     n_fft: int = 512,
-    channel_dropout: float = 0.0
+    channel_dropout: float = 0.0,
+    ssm_backbone: str = 's4d',
+    ssm_layers: int = 4,
+    fas_k: int = 0,
+    fas_channels: tuple = (1, 2),
+    monitor: str = 'val_f1',
+    fbeta: float = 1.0
 ) -> Dict:
     """
     Group-based cross-validation preventing data leakage.
@@ -1176,6 +1256,8 @@ def run_groupkfold_cv(
                           deep_classifier=deep_classifier,
                           fusion_mode=fusion_mode,
                           use_channel_attn=use_channel_attn,
+                          ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
+                          fas_k=fas_k, fas_channels=fas_channels,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -1188,7 +1270,8 @@ def run_groupkfold_cv(
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
-            fold_name=fold_name, channel_dropout=channel_dropout
+            fold_name=fold_name, channel_dropout=channel_dropout,
+            monitor=monitor, fbeta=fbeta
         )
 
         # ── Evaluate on held-out test groups ──
@@ -1322,6 +1405,10 @@ def run_groupkfold_cv(
         'pooled_oof': pooled,
         'channel_dropout': channel_dropout,
         'strong_augment': bool(getattr(dataset, 'strong_augment', False)),
+        'ssm_backbone': ssm_backbone,
+        'ssm_layers': ssm_layers,
+        'fas_k': fas_k,
+        'fas_channels': list(fas_channels),
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
@@ -1429,8 +1516,42 @@ def main():
                         help='Per-channel dropout probability for temporal branch (0.0=off, '
                              '0.3=each ch has 30%% chance of being zeroed per batch). '
                              'Forces model to learn from all channels.')
+    parser.add_argument('--ssm-backbone', choices=['s4d', 'mamba'], default='s4d',
+                        help='ArcSSM sequence backbone (only --model arcssm): s4d = LTI '
+                             'diagonal-complex resonator bank (default); mamba = selective '
+                             'S6 (DCAMamba-style, causal scan).')
+    parser.add_argument('--ssm-layers', type=int, default=4,
+                        help='Number of stacked SSM blocks in the arcssm track '
+                             '(DCAMamba ablation: 2 near-optimal, >4 overfits).')
+    parser.add_argument('--fas-k', type=int, default=0,
+                        help='FAS (Feature Amplification Strategy) K: per channel keep '
+                             'top-K + bottom-K values over time (2K total); 0 = off. '
+                             'Order-statistic front-end adapted from DCAMamba (DC->AC).')
+    parser.add_argument('--fas-channels', type=str, default='1,2',
+                        help='Comma-separated channel indices FAS applies to (default '
+                             '"1,2" = |dI|,TKEO, fundamental-suppressed; 0=I_norm, '
+                             '3=RMS_slide). Used only when --fas-k > 0.')
+    # ── Early-stopping monitor ──────────────────────────────────────────────
+    parser.add_argument('--monitor', type=str, default='val_f1',
+                        choices=list(_VALID_MONITORS),
+                        help='Metric to maximise for early stopping and model '
+                             'checkpointing. Choices: '
+                             'val_f1 (default, balanced F1); '
+                             'val_precision (minimises false positives / nuisance '
+                             'trips — recommended for arc-fault disjoncteur context); '
+                             'val_recall (minimises missed arcs); '
+                             'val_specificity (TN rate — how often normal cycles '
+                             'are correctly left alone); '
+                             'val_fbeta (weighted F-score, use --fbeta to set β: '
+                             'β<1 → precision-heavy, β>1 → recall-heavy).')
+    parser.add_argument('--fbeta', type=float, default=1.0,
+                        help='β for the F-beta score used when --monitor val_fbeta. '
+                             'β=0.5 weights precision 4× over recall (fewer false '
+                             'alarms). β=2 weights recall 4× over precision (fewer '
+                             'missed arcs). Default: 1.0 (= F1).')
 
     args = parser.parse_args()
+    fas_channels = tuple(int(c) for c in str(args.fas_channels).split(',') if c.strip())
 
     set_seed(args.seed)
 
@@ -1512,7 +1633,9 @@ def main():
             fusion_mode=args.fusion_mode,
             use_channel_attn=not args.no_channel_attn,
             fs=fs,
-            n_fft=args.n_fft
+            n_fft=args.n_fft,
+            monitor=args.monitor,
+            fbeta=args.fbeta
         )
     elif args.mode == 'groupkfold':
         run_groupkfold_cv(
@@ -1541,7 +1664,13 @@ def main():
             use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft,
-            channel_dropout=args.channel_dropout
+            channel_dropout=args.channel_dropout,
+            ssm_backbone=args.ssm_backbone,
+            ssm_layers=args.ssm_layers,
+            fas_k=args.fas_k,
+            fas_channels=fas_channels,
+            monitor=args.monitor,
+            fbeta=args.fbeta
         )
     else:
         run_single_training(
@@ -1567,7 +1696,13 @@ def main():
             use_channel_attn=not args.no_channel_attn,
             fs=fs,
             n_fft=args.n_fft,
-            channel_dropout=args.channel_dropout
+            channel_dropout=args.channel_dropout,
+            ssm_backbone=args.ssm_backbone,
+            ssm_layers=args.ssm_layers,
+            fas_k=args.fas_k,
+            fas_channels=fas_channels,
+            monitor=args.monitor,
+            fbeta=args.fbeta
         )
 
 

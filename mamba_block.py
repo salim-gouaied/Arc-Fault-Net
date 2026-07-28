@@ -83,7 +83,8 @@ def selective_scan(
     #   deltaA   = exp(Δ · A)
     #   deltaB_u = (Δ · B) · u          (Euler approximation of B̄, as in the
     #                                    reference minimal Mamba implementations)
-    deltaA = torch.exp(delta.unsqueeze(-1) * A)                       # (B, D, L, N)
+    # A is (D, N); broadcast as (1, D, 1, N) so deltaA[b,d,l,n] = exp(Δ[b,d,l]·A[d,n]).
+    deltaA = torch.exp(delta.unsqueeze(-1) * A[None, :, None, :])      # (B, D, L, N)
     deltaB_u = (
         delta.unsqueeze(-1)                                          # (B, D, L, 1)
         * B.permute(0, 2, 1).unsqueeze(1)                            # (B, 1, L, N)
