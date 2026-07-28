@@ -22,8 +22,10 @@ Features:
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
+import math
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, GroupShuffleSplit
 try:
@@ -69,6 +71,68 @@ def set_seed(seed: int):
 #  TRAINING FUNCTIONS
 # ═══════════════════════════════════════════════════════
 
+def _coral_penalty(emb: torch.Tensor, dom: torch.Tensor) -> torch.Tensor:
+    """
+    Deep-CORAL alignment across training campaigns (Sun & Saenko 2016), extended
+    with a mean term. Pulls the per-campaign embedding distributions (1st + 2nd
+    moments) together so the 128-d embedding — hence the logit — stops sliding
+    from one campaign to the next. Zero parameters. Needs >=2 samples per domain.
+    """
+    stats = []
+    d_dim = emb.shape[1]
+    for d in torch.unique(dom):
+        e = emb[dom == d]
+        if e.shape[0] < 2:
+            continue
+        mu = e.mean(0)
+        ec = e - mu
+        cov = (ec.t() @ ec) / (e.shape[0] - 1)
+        stats.append((mu, cov))
+    if len(stats) < 2:
+        return emb.new_zeros(())
+    loss = emb.new_zeros(())
+    n = 0
+    for i in range(len(stats)):
+        for j in range(i + 1, len(stats)):
+            mu_i, cov_i = stats[i]; mu_j, cov_j = stats[j]
+            loss = loss + ((cov_i - cov_j) ** 2).sum() / (4 * d_dim * d_dim) \
+                        + ((mu_i - mu_j) ** 2).mean()
+            n += 1
+    return loss / max(n, 1)
+
+
+def _dg_step(model, x_1d, x_2d, targets, dom, dg):
+    """
+    One domain-generalization training step (0 extra params). Returns (loss, logits).
+      - GroupDRO (Sagawa 2020): weight the per-campaign losses toward the WORST
+        campaign via an online exponentiated update, instead of the plain average.
+      - CORAL: optional embedding-alignment penalty (see _coral_penalty).
+    dg['group_weights'] is a persistent dict (owned by train_model) carrying the
+    DRO weights across batches/epochs.
+    """
+    need_emb = dg['coral_weight'] > 0
+    if need_emb:
+        logits, emb = model(x_1d, x_2d, return_embedding=True)
+    else:
+        logits, emb = model(x_1d, x_2d), None
+    bce = F.binary_cross_entropy_with_logits(
+        logits, targets, reduction='none', pos_weight=dg.get('pos_weight'))
+
+    if dg['group_dro']:
+        q = dg['group_weights']
+        per = {int(d): bce[dom == d].mean() for d in torch.unique(dom)}
+        for d, Ld in per.items():                       # online DRO weight update
+            q[d] = q.get(d, 1.0) * math.exp(dg['dro_eta'] * float(Ld.detach()))
+        Z = sum(q[d] for d in per) + 1e-12
+        loss = sum((q[d] / Z) * Ld for d, Ld in per.items())
+    else:
+        loss = bce.mean()
+
+    if need_emb:
+        loss = loss + dg['coral_weight'] * _coral_penalty(emb, dom)
+    return loss, logits
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -78,7 +142,8 @@ def train_one_epoch(
     epoch: int,
     gradient_clip: float = 0.5,
     label_smoothing: float = 0.05,
-    channel_dropout: float = 0.0
+    channel_dropout: float = 0.0,
+    dg: Optional[dict] = None
 ) -> Dict[str, float]:
     """Train for one epoch with label smoothing and optional channel dropout.
 
@@ -97,7 +162,7 @@ def train_one_epoch(
     total = 0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch} [Train]", leave=False)
-    for x_1d, x_2d, labels, _ in pbar:
+    for x_1d, x_2d, labels, dom in pbar:
         x_1d   = x_1d.to(device)
         x_2d   = x_2d.to(device)
         labels = labels.to(device)
@@ -117,8 +182,12 @@ def train_one_epoch(
 
         optimizer.zero_grad()
 
-        logits = model(x_1d, x_2d)
-        loss   = criterion(logits, smoothed_labels)
+        if dg is None:
+            logits = model(x_1d, x_2d)
+            loss   = criterion(logits, smoothed_labels)
+        else:
+            loss, logits = _dg_step(model, x_1d, x_2d, smoothed_labels,
+                                     dom.to(device), dg)
 
         loss.backward()
 
@@ -296,7 +365,10 @@ def train_model(
     fold_name: str = "",
     channel_dropout: float = 0.0,
     monitor: str = 'val_f1',
-    fbeta: float = 1.0
+    fbeta: float = 1.0,
+    group_dro: bool = False,
+    coral_weight: float = 0.0,
+    dro_eta: float = 0.05
 ) -> Tuple[nn.Module, Dict]:
     """
     Train model with configurable early stopping.
@@ -310,6 +382,11 @@ def train_model(
         history: Full training history dict
     """
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    # Domain-generalization state (0 extra params). dg=None => standard training.
+    dg = None
+    if group_dro or coral_weight > 0:
+        dg = {'group_dro': group_dro, 'coral_weight': float(coral_weight),
+              'dro_eta': float(dro_eta), 'group_weights': {}, 'pos_weight': pos_weight}
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=10, T_mult=2
@@ -335,7 +412,7 @@ def train_model(
     for epoch in range(1, epochs + 1):
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch, gradient_clip,
-            channel_dropout=channel_dropout
+            channel_dropout=channel_dropout, dg=dg
         )
         val_metrics = evaluate(
             model, val_loader, criterion, device, "Val", threshold
@@ -1059,7 +1136,11 @@ def run_groupkfold_cv(
     fas_k: int = 0,
     fas_channels: tuple = (1, 2),
     monitor: str = 'val_f1',
-    fbeta: float = 1.0
+    fbeta: float = 1.0,
+    group_dro: bool = False,
+    coral_weight: float = 0.0,
+    dro_eta: float = 0.05,
+    dg_balanced_sampler: bool = False
 ) -> Dict:
     """
     Group-based cross-validation preventing data leakage.
@@ -1082,6 +1163,12 @@ def run_groupkfold_cv(
 
     data_dir = Path(dataset.data_dir)
     group_ids = load_group_ids(data_dir, len(dataset), group_level)
+    # Domain generalization needs a per-cycle campaign id. The dataset returns
+    # self.charges as the 4th batch element (dummy here), so we repurpose it to
+    # carry the integer campaign id — no dataset/interface change needed.
+    if group_dro or coral_weight > 0 or dg_balanced_sampler:
+        _c2i = {c: i for i, c in enumerate(sorted(np.unique(group_ids)))}
+        dataset.charges = np.array([_c2i[g] for g in group_ids], dtype=np.int64)
     labels = dataset.y
     indices = np.arange(len(dataset))
 
@@ -1235,9 +1322,21 @@ def run_groupkfold_cv(
             print(f"    strong augmentation ON — donor pool: "
                   f"{len(dataset._donor_pool)} normal training cycles")
 
-        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
-                                  shuffle=True, num_workers=num_workers,
-                                  pin_memory=True, drop_last=True)
+        # Campaign-balanced sampling (0 params): each training campaign is equally
+        # likely per batch, so no campaign dominates the gradient and the per-campaign
+        # DRO/CORAL estimates stay stable.
+        if dg_balanced_sampler:
+            _dom = dataset.charges[train_idx]
+            _w = 1.0 / np.bincount(_dom)[_dom]
+            _sampler = WeightedRandomSampler(
+                torch.as_tensor(_w, dtype=torch.double), len(train_idx), replacement=True)
+            train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
+                                      sampler=_sampler, num_workers=num_workers,
+                                      pin_memory=True, drop_last=True)
+        else:
+            train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
+                                      shuffle=True, num_workers=num_workers,
+                                      pin_memory=True, drop_last=True)
         val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size,
                                 shuffle=False, num_workers=num_workers, pin_memory=True)
         test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size,
@@ -1271,7 +1370,8 @@ def run_groupkfold_cv(
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
             fold_name=fold_name, channel_dropout=channel_dropout,
-            monitor=monitor, fbeta=fbeta
+            monitor=monitor, fbeta=fbeta,
+            group_dro=group_dro, coral_weight=coral_weight, dro_eta=dro_eta
         )
 
         # ── Evaluate on held-out test groups ──
@@ -1409,6 +1509,10 @@ def run_groupkfold_cv(
         'ssm_layers': ssm_layers,
         'fas_k': fas_k,
         'fas_channels': list(fas_channels),
+        'group_dro': group_dro,
+        'coral_weight': coral_weight,
+        'dro_eta': dro_eta,
+        'dg_balanced_sampler': dg_balanced_sampler,
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
@@ -1531,6 +1635,20 @@ def main():
                         help='Comma-separated channel indices FAS applies to (default '
                              '"1,2" = |dI|,TKEO, fundamental-suppressed; 0=I_norm, '
                              '3=RMS_slide). Used only when --fas-k > 0.')
+    # ── Domain generalization (groupkfold only; 0 extra parameters) ──────────
+    parser.add_argument('--group-dro', action='store_true',
+                        help='GroupDRO (Sagawa 2020): optimise the WORST training '
+                             'campaign instead of the average. Targets cross-campaign '
+                             'generalization directly. groupkfold only.')
+    parser.add_argument('--coral-weight', type=float, default=0.0,
+                        help='Deep-CORAL penalty weight: align per-campaign embedding '
+                             'mean+covariance to reduce the per-campaign score slide. '
+                             '0=off. Try 0.1-1.0. groupkfold only.')
+    parser.add_argument('--dro-eta', type=float, default=0.05,
+                        help='GroupDRO step size for the online worst-group weighting.')
+    parser.add_argument('--dg-balanced-sampler', action='store_true',
+                        help='Sample each training campaign equally per batch '
+                             '(recommended with --group-dro / --coral-weight).')
     # ── Early-stopping monitor ──────────────────────────────────────────────
     parser.add_argument('--monitor', type=str, default='val_f1',
                         choices=list(_VALID_MONITORS),
@@ -1670,7 +1788,11 @@ def main():
             fas_k=args.fas_k,
             fas_channels=fas_channels,
             monitor=args.monitor,
-            fbeta=args.fbeta
+            fbeta=args.fbeta,
+            group_dro=args.group_dro,
+            coral_weight=args.coral_weight,
+            dro_eta=args.dro_eta,
+            dg_balanced_sampler=args.dg_balanced_sampler
         )
     else:
         run_single_training(
