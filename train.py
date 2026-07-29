@@ -34,6 +34,7 @@ try:
 except ImportError:
     from sklearn.model_selection import GroupKFold
     _HAS_STRATIFIED_GROUP_KFOLD = False
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 import numpy as np
 import pandas as pd
@@ -725,6 +726,7 @@ def run_single_training(
     ssm_layers: int = 4,
     fas_k: int = 0,
     fas_channels: tuple = (1, 2),
+    use_voltage: bool = False,
     monitor: str = 'val_f1',
     fbeta: float = 1.0
 ) -> Dict:
@@ -783,7 +785,7 @@ def run_single_training(
                       fusion_mode=fusion_mode,
                       use_channel_attn=use_channel_attn,
                       ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
-                      fas_k=fas_k, fas_channels=fas_channels,
+                      fas_k=fas_k, fas_channels=fas_channels, use_voltage=use_voltage,
                       fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
@@ -1104,6 +1106,104 @@ def load_group_ids(data_dir: Path, n_samples: int, group_level: str = 'recording
     return group_ids
 
 
+def load_recording_ids(data_dir: Path, n_samples: int) -> np.ndarray:
+    r"""
+    Recording-level group IDs (one physical CSV / one continuous LeCroy capture),
+    aligned with X_multi.npy / y.npy. A recording is the honest anti-leakage unit
+    for the validation split: its consecutive périodes all evolve from ONE arc
+    event, so they must never be split across train and val.
+
+    The recording id is not stored as a column; it is recovered from metadata.
+    Two storage conventions coexist and are auto-detected per (dataset, exp_name):
+      - 2024 IJL July campaigns: one exp_name packs many recordings, stored in
+        temporal order; a new recording begins wherever alt_index resets
+        (sawtooth). ~65-88 recordings per campaign.
+      - 2026 OthmaneSalim: each exp_name (load config) IS one recording of ~76
+        périodes stored shuffled; alt_index is nearly unique within it, so the
+        exp_name itself is the recording id. 20 recordings.
+    """
+    meta = load_metadata(data_dir, n_samples)
+    for col in ('dataset', 'exp_name', 'alt_index'):
+        if col not in meta.columns:
+            raise ValueError(f"metadata.csv must have '{col}' for recording-level splits")
+    ds  = meta['dataset'].astype(str).values
+    exp = meta['exp_name'].astype(str).values
+    alt = meta['alt_index'].astype(int).values
+
+    blocks = {}
+    for i in range(n_samples):                       # group rows by (dataset,exp), keep order
+        blocks.setdefault((ds[i], exp[i]), []).append(i)
+
+    rec = np.empty(n_samples, dtype=object)
+    for (d, e), idxs in blocks.items():
+        alts = [alt[i] for i in idxs]
+        if len(set(alts)) < 0.5 * len(idxs):         # repeats => many recordings (sawtooth)
+            run, prev = 0, None
+            for i in idxs:
+                if prev is not None and alt[i] <= prev:
+                    run += 1
+                rec[i] = f"{d}|{e}|run{run}"
+                prev = alt[i]
+        else:                                        # nearly unique => exp_name is one recording
+            for i in idxs:
+                rec[i] = f"{d}|{e}"
+    return rec.astype(str)
+
+
+def _auc_scores(labels: np.ndarray, probs: np.ndarray) -> Tuple[float, float]:
+    """(ROC-AUC, PR-AUC) — threshold-free. NaN if only one class is present."""
+    labels = np.asarray(labels).astype(int)
+    probs  = np.asarray(probs, dtype=float)
+    if len(np.unique(labels)) < 2:
+        return float('nan'), float('nan')
+    try:
+        return (float(roc_auc_score(labels, probs)),
+                float(average_precision_score(labels, probs)))
+    except Exception:
+        return float('nan'), float('nan')
+
+
+def _metrics_from_probs(labels: np.ndarray, probs: np.ndarray,
+                        threshold: float) -> Dict[str, float]:
+    """Confusion-matrix metrics at a given threshold, computed from stored probs."""
+    labels = np.asarray(labels).astype(int)
+    pred = (np.asarray(probs, dtype=float) > threshold).astype(int)
+    tp = int(((pred == 1) & (labels == 1)).sum()); fp = int(((pred == 1) & (labels == 0)).sum())
+    fn = int(((pred == 0) & (labels == 1)).sum()); tn = int(((pred == 0) & (labels == 0)).sum())
+    prec = tp / (tp + fp + 1e-8); rec = tp / (tp + fn + 1e-8)
+    return {
+        'accuracy': (tp + tn) / max(len(labels), 1),
+        'precision': prec, 'recall': rec,
+        'f1': 2 * prec * rec / (prec + rec + 1e-8),
+        'specificity': tn / (tn + fp + 1e-8),
+        'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn,
+    }
+
+
+def _select_threshold(labels: np.ndarray, probs: np.ndarray,
+                      beta: float = 1.0) -> Tuple[float, float]:
+    """
+    Threshold that maximises F-beta on the given probs. MUST be called on
+    VALIDATION data only — never on the test campaign. Returns (threshold,
+    best_fbeta); falls back to 0.5 if the split has a single class.
+    """
+    labels = np.asarray(labels).astype(int)
+    probs  = np.asarray(probs, dtype=float)
+    if len(np.unique(labels)) < 2:
+        return 0.5, float('nan')
+    b2 = beta * beta
+    best_t, best_s = 0.5, -1.0
+    for t in np.linspace(0.01, 0.99, 197):
+        pred = (probs > t).astype(int)
+        tp = ((pred == 1) & (labels == 1)).sum(); fp = ((pred == 1) & (labels == 0)).sum()
+        fn = ((pred == 0) & (labels == 1)).sum()
+        prec = tp / (tp + fp + 1e-8); rec = tp / (tp + fn + 1e-8)
+        s = (1 + b2) * prec * rec / (b2 * prec + rec + 1e-8)
+        if s > best_s:
+            best_s, best_t = s, float(t)
+    return best_t, float(best_s)
+
+
 def run_groupkfold_cv(
     model_name: str,
     dataset: ArcFaultDataset,
@@ -1135,6 +1235,7 @@ def run_groupkfold_cv(
     ssm_layers: int = 4,
     fas_k: int = 0,
     fas_channels: tuple = (1, 2),
+    use_voltage: bool = False,
     monitor: str = 'val_f1',
     fbeta: float = 1.0,
     group_dro: bool = False,
@@ -1199,14 +1300,27 @@ def run_groupkfold_cv(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Resolve how the validation set is carved out of the training groups ──
-    # 'group' spends whole groups on validation. With only 4 campaign groups that
-    # costs a full campaign (up to 35% of the data) and leaves 2 campaigns to train
-    # on, so it is only sensible when there are enough groups to spare.
+    # Honest unit is the RECORDING (one CSV / one continuous capture): all its
+    # consecutive périodes stay on one side. 'group' spends whole campaign groups
+    # (too costly with 4 campaigns); 'alternance' groups période-slots and still
+    # splits a recording across train/val; 'random' is cycle-level (leaky).
+    try:
+        recording_ids = load_recording_ids(data_dir, len(dataset))
+        _rec_err = None
+    except Exception as e:
+        recording_ids, _rec_err = None, str(e)
     n_train_groups_typical = len(np.unique(group_ids)) - 1
     if val_mode == 'auto':
-        val_mode_eff = 'group' if n_train_groups_typical >= 6 else 'alternance'
+        if recording_ids is not None:
+            val_mode_eff = 'recording'
+        elif n_train_groups_typical >= 6:
+            val_mode_eff = 'group'
+        else:
+            val_mode_eff = 'alternance'
     else:
         val_mode_eff = val_mode
+    if val_mode_eff == 'recording' and recording_ids is None:
+        raise ValueError(f"--val-mode recording unavailable (recording ids: {_rec_err})")
     alternance_ids = (load_alternance_ids(data_dir, len(dataset))
                       if val_mode_eff == 'alternance' else None)
 
@@ -1216,6 +1330,9 @@ def run_groupkfold_cv(
         'recording': "generalization to unseen recordings",
     }.get(group_level, group_level)
     val_desc = {
+        'recording':  "~1/7 of training RECORDINGS held out, label-stratified "
+                      "(one CSV/capture kept whole — no période of a recording "
+                      "is split across train/val)",
         'alternance': "15% of training-campaign ALTERNANCES (label-stratified, "
                       "no arc burst shared with train)",
         'group':      "whole training groups (~15%)",
@@ -1234,6 +1351,9 @@ def run_groupkfold_cv(
     # once, by a model that never saw its group → they pool into one honest matrix.
     oof_probs = np.full(len(dataset), np.nan, dtype=np.float64)
     oof_fold = np.full(len(dataset), -1, dtype=np.int64)
+    # Calibrated OOF preds: each fold's test cycles predicted at THAT fold's
+    # val-chosen threshold (Phase 1). Pooled → the honest deployable operating point.
+    oof_pred_cal = np.full(len(dataset), -1, dtype=np.int64)
 
     for fold_idx, (train_val_idx, test_idx) in enumerate(splits):
         fold_seed = seed + fold_idx
@@ -1251,6 +1371,17 @@ def run_groupkfold_cv(
             gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=fold_seed)
             tv_train_sub, tv_val_sub = next(gss.split(
                 train_val_idx, labels[train_val_idx], groups=group_ids[train_val_idx]))
+        elif val_mode_eff == 'recording':
+            # ~1/7 of the training RECORDINGS to val, label-stratified, each
+            # recording (one CSV/capture) kept intact on one side.
+            sub_groups = recording_ids[train_val_idx]
+            if _HAS_STRATIFIED_GROUP_KFOLD:
+                sub_splitter = StratifiedGroupKFold(
+                    n_splits=7, shuffle=True, random_state=fold_seed)
+            else:
+                sub_splitter = GroupKFold(n_splits=7)
+            tv_train_sub, tv_val_sub = next(sub_splitter.split(
+                train_val_idx, labels[train_val_idx], groups=sub_groups))
         elif val_mode_eff == 'alternance':
             # ~1/7 of the alternances to val, label-stratified, alternances intact
             sub_groups = alternance_ids[train_val_idx]
@@ -1278,6 +1409,12 @@ def run_groupkfold_cv(
             assert train_groups.isdisjoint(val_groups), (
                 f"LEAKAGE fold {fold_idx}: groups shared train↔val: "
                 f"{train_groups & val_groups}")
+        elif val_mode_eff == 'recording':
+            train_recs = set(recording_ids[train_idx])
+            val_recs = set(recording_ids[val_idx])
+            assert train_recs.isdisjoint(val_recs), (
+                f"LEAKAGE fold {fold_idx}: recordings shared train↔val: "
+                f"{sorted(train_recs & val_recs)[:5]}")
         elif val_mode_eff == 'alternance':
             train_alts = set(alternance_ids[train_idx])
             val_alts = set(alternance_ids[val_idx])
@@ -1356,7 +1493,7 @@ def run_groupkfold_cv(
                           fusion_mode=fusion_mode,
                           use_channel_attn=use_channel_attn,
                           ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
-                          fas_k=fas_k, fas_channels=fas_channels,
+                          fas_k=fas_k, fas_channels=fas_channels, use_voltage=use_voltage,
                           fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
@@ -1391,11 +1528,34 @@ def run_groupkfold_cv(
         oof_probs[test_idx] = fold_probs
         oof_fold[test_idx] = fold_idx + 1
 
-        print(f"    → Acc={100*test_metrics['accuracy']:.2f}%  "
+        # ── Phase 0/1: honest val-based threshold + threshold-free AUC ─────────
+        # Pick the operating threshold on VALIDATION probs only (never on test),
+        # using the same F-beta objective as the early-stopping monitor, then
+        # apply it once to the held-out campaign. ROC-AUC / PR-AUC are reported
+        # threshold-free (immune to the per-campaign logit drift).
+        val_probs, val_labels_arr = predict_probs(model, val_loader, device,
+                                                  f"Fold {fold_idx+1} Val-probs")
+        assert np.array_equal(val_labels_arr.astype(int), labels[val_idx].astype(int)), \
+            f"fold {fold_idx}: val prediction order does not match val_idx order"
+        np.savez(fold_dir / 'val_predictions.npz',
+                 idx=val_idx, probs=val_probs, labels=val_labels_arr)
+        beta_sel = fbeta if monitor == 'val_fbeta' else 1.0
+        thr_star, val_fbeta_star = _select_threshold(val_labels_arr, val_probs, beta_sel)
+        test_cal = _metrics_from_probs(fold_labels, fold_probs, thr_star)
+        test_roc_auc, test_pr_auc = _auc_scores(fold_labels, fold_probs)
+        oof_pred_cal[test_idx] = (fold_probs > thr_star).astype(int)
+
+        print(f"    → @0.50   Acc={100*test_metrics['accuracy']:.2f}%  "
               f"F1={100*test_metrics['f1']:.2f}%  "
               f"Prec={100*test_metrics['precision']:.2f}%  "
               f"Rec={100*test_metrics['recall']:.2f}%  "
               f"Spec={100*test_metrics['specificity']:.2f}%")
+        print(f"    → @{thr_star:.2f}*  Acc={100*test_cal['accuracy']:.2f}%  "
+              f"F1={100*test_cal['f1']:.2f}%  "
+              f"Prec={100*test_cal['precision']:.2f}%  "
+              f"Rec={100*test_cal['recall']:.2f}%  "
+              f"Spec={100*test_cal['specificity']:.2f}%   (*threshold from val)")
+        print(f"      ROC-AUC={test_roc_auc:.4f}  PR-AUC={test_pr_auc:.4f}  (threshold-free)")
 
         fold_result = {
             'fold': fold_idx + 1,
@@ -1416,6 +1576,16 @@ def run_groupkfold_cv(
             'test_specificity': float(test_metrics['specificity']),
             'test_tp': test_metrics['tp'], 'test_fp': test_metrics['fp'],
             'test_fn': test_metrics['fn'], 'test_tn': test_metrics['tn'],
+            # Phase 0/1: threshold-free + val-calibrated
+            'val_threshold': thr_star,
+            'val_fbeta_star': val_fbeta_star,
+            'test_roc_auc': test_roc_auc,
+            'test_pr_auc': test_pr_auc,
+            'test_accuracy_cal': float(test_cal['accuracy']),
+            'test_f1_cal': float(test_cal['f1']),
+            'test_precision_cal': float(test_cal['precision']),
+            'test_recall_cal': float(test_cal['recall']),
+            'test_specificity_cal': float(test_cal['specificity']),
         }
         fold_results.append(fold_result)
 
@@ -1453,6 +1623,20 @@ def run_groupkfold_cv(
         summary[f'{m}_mean'] = float(mean)
         summary[f'{m}_std'] = float(std)
 
+    # ── Threshold-free + val-calibrated fold metrics (Phase 0/1) ──
+    print(f"\n  Threshold-free (mean ± std over folds):")
+    for m, lab in [('test_roc_auc', 'ROC-AUC'), ('test_pr_auc', 'PR-AUC')]:
+        vals = np.array([r[m] for r in fold_results], dtype=float)
+        print(f"    {lab:11s}: {np.nanmean(vals):.4f} ± {np.nanstd(vals):.4f}")
+        summary[f'{m}_mean'] = float(np.nanmean(vals)); summary[f'{m}_std'] = float(np.nanstd(vals))
+    print(f"\n  At val-chosen threshold (per fold — honest operating point):")
+    for m, lab in [('test_f1_cal', 'F1'), ('test_precision_cal', 'Precision'),
+                   ('test_recall_cal', 'Recall'), ('test_specificity_cal', 'Specificity')]:
+        vals = np.array([r[m] for r in fold_results], dtype=float)
+        print(f"    {lab:12s}: {100*np.nanmean(vals):.2f}% ± {100*np.nanstd(vals):.2f}%")
+        summary[f'{m}_mean'] = float(np.nanmean(vals)); summary[f'{m}_std'] = float(np.nanstd(vals))
+    print(f"    thresholds : {[round(r['val_threshold'], 2) for r in fold_results]}")
+
     # ── Pooled out-of-fold metrics ───────────────────────
     # Mean ± std over folds weights a 60-cycle fold like a 3820-cycle one. When the
     # folds partition the dataset (LeaveOneGroupOut), pooling every out-of-fold
@@ -1466,6 +1650,7 @@ def run_groupkfold_cv(
         tp = int(((pred == 1) & (l == 1)).sum()); fp = int(((pred == 1) & (l == 0)).sum())
         fn = int(((pred == 0) & (l == 1)).sum()); tn = int(((pred == 0) & (l == 0)).sum())
         prec = tp / (tp + fp + 1e-8); rec = tp / (tp + fn + 1e-8)
+        roc_auc, pr_auc = _auc_scores(l, p)
         pooled = {
             'n_tested': int(tested.sum()),
             'covers_full_dataset': bool(tested.all()),
@@ -1473,10 +1658,26 @@ def run_groupkfold_cv(
             'precision': prec, 'recall': rec,
             'f1': 2 * prec * rec / (prec + rec + 1e-8),
             'specificity': tn / (tn + fp + 1e-8),
+            'roc_auc': roc_auc, 'pr_auc': pr_auc,
             'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn,
         }
+        # Pooled at per-fold val-chosen thresholds (honest deployable operating point)
+        cal_mask = tested & (oof_pred_cal >= 0)
+        if cal_mask.sum() > 0:
+            lc = labels[cal_mask].astype(int); pc = oof_pred_cal[cal_mask].astype(int)
+            tpc = int(((pc == 1) & (lc == 1)).sum()); fpc = int(((pc == 1) & (lc == 0)).sum())
+            fnc = int(((pc == 0) & (lc == 1)).sum()); tnc = int(((pc == 0) & (lc == 0)).sum())
+            precc = tpc / (tpc + fpc + 1e-8); recc = tpc / (tpc + fnc + 1e-8)
+            pooled['calibrated'] = {
+                'accuracy': (tpc + tnc) / max(int(cal_mask.sum()), 1),
+                'precision': precc, 'recall': recc,
+                'f1': 2 * precc * recc / (precc + recc + 1e-8),
+                'specificity': tnc / (tnc + fpc + 1e-8),
+                'tp': tpc, 'fp': fpc, 'fn': fnc, 'tn': tnc,
+            }
         np.savez(run_dir / 'oof_predictions.npz',
                  probs=oof_probs, labels=labels.astype(int), fold=oof_fold,
+                 pred_cal=oof_pred_cal,
                  groups=np.array([str(g) for g in group_ids]))
         print(f"\n  POOLED OUT-OF-FOLD ({pooled['n_tested']}/{len(dataset)} cycles, "
               f"each predicted by a model that never saw its {group_level}):")
@@ -1486,6 +1687,16 @@ def run_groupkfold_cv(
         print(f"    Recall      : {100*pooled['recall']:.2f}%")
         print(f"    Specificity : {100*pooled['specificity']:.2f}%")
         print(f"    TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+        print(f"    ROC-AUC     : {roc_auc:.4f}   PR-AUC: {pr_auc:.4f}  (threshold-free)")
+        if 'calibrated' in pooled:
+            c = pooled['calibrated']
+            print(f"\n  POOLED at val-chosen thresholds (honest deployable operating point):")
+            print(f"    Accuracy    : {100*c['accuracy']:.2f}%")
+            print(f"    F1          : {100*c['f1']:.2f}%")
+            print(f"    Precision   : {100*c['precision']:.2f}%")
+            print(f"    Recall      : {100*c['recall']:.2f}%")
+            print(f"    Specificity : {100*c['specificity']:.2f}%")
+            print(f"    TP={c['tp']}  FP={c['fp']}  FN={c['fn']}  TN={c['tn']}")
 
     print(f"\n  Interpretation:")
     if group_level == 'recording':
@@ -1509,6 +1720,7 @@ def run_groupkfold_cv(
         'ssm_layers': ssm_layers,
         'fas_k': fas_k,
         'fas_channels': list(fas_channels),
+        'use_voltage': use_voltage,
         'group_dro': group_dro,
         'coral_weight': coral_weight,
         'dro_eta': dro_eta,
@@ -1562,13 +1774,13 @@ def main():
                              'campaign = leave-one-acquisition-campaign-out (4 folds, '
                              'recommended: the honest generalization protocol on this dataset)')
     parser.add_argument('--val-mode', type=str, default='auto',
-                        choices=['auto', 'alternance', 'group', 'random'],
+                        choices=['auto', 'recording', 'alternance', 'group', 'random'],
                         help='(groupkfold mode) How the val set is taken from the training '
-                             'groups. alternance = 15%% of training alternances, label-'
-                             'stratified, no arc burst split across train/val (default when '
-                             'fewer than 6 groups). group = whole groups (costs a full '
-                             'campaign at campaign level). random = cycle-level, leaky, '
-                             'smoke tests only.')
+                             'groups. recording = ~1/7 of training RECORDINGS held out, one '
+                             'CSV/capture kept whole (the honest default via auto). '
+                             'alternance = 15%% of training période-slots (still splits a '
+                             'recording across train/val). group = whole campaign groups. '
+                             'random = cycle-level, leaky, smoke tests only.')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
@@ -1649,6 +1861,12 @@ def main():
     parser.add_argument('--dg-balanced-sampler', action='store_true',
                         help='Sample each training campaign equally per batch '
                              '(recommended with --group-dro / --coral-weight).')
+    parser.add_argument('--use-voltage', action='store_true',
+                        help='ArcSSM dual-branch: add a lighter S4D branch on '
+                             'v_derived4 (voltage) fused with the current branch. '
+                             "v(t)'s HF arc signature is more bench-consistent, so "
+                             'this mainly stabilises specificity on unseen campaigns. '
+                             'Switches channel-mode to iv_derived4 (8 channels).')
     # ── Early-stopping monitor ──────────────────────────────────────────────
     parser.add_argument('--monitor', type=str, default='val_f1',
                         choices=list(_VALID_MONITORS),
@@ -1685,8 +1903,12 @@ def main():
 
     # Resolve channel mode (V2 and the SSM track use the 4 I-derived channels)
     if args.channel_mode == 'auto':
-        channel_mode = 'i_derived4' if args.model in (
-            'arcfaultnet_v2', 'arcssm', 'arcssm_selective') else 'raw2'
+        if args.model in ('arcssm', 'arcssm_selective') and args.use_voltage:
+            channel_mode = 'iv_derived4'          # dual-branch: I + V derived channels
+        elif args.model in ('arcfaultnet_v2', 'arcssm', 'arcssm_selective'):
+            channel_mode = 'i_derived4'
+        else:
+            channel_mode = 'raw2'
     else:
         channel_mode = args.channel_mode
 
@@ -1787,6 +2009,7 @@ def main():
             ssm_layers=args.ssm_layers,
             fas_k=args.fas_k,
             fas_channels=fas_channels,
+            use_voltage=args.use_voltage,
             monitor=args.monitor,
             fbeta=args.fbeta,
             group_dro=args.group_dro,
@@ -1823,6 +2046,7 @@ def main():
             ssm_layers=args.ssm_layers,
             fas_k=args.fas_k,
             fas_channels=fas_channels,
+            use_voltage=args.use_voltage,
             monitor=args.monitor,
             fbeta=args.fbeta
         )

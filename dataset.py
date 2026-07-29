@@ -73,8 +73,9 @@ class ArcFaultDataset(Dataset):
         # OFF by default so every earlier run stays reproducible.
         self.strong_augment = strong_augment
         self._donor_pool = None  # set via set_donor_pool() — MUST exclude test data
-        if channel_mode not in ('raw2', 'i_derived4'):
-            raise ValueError(f"channel_mode must be 'raw2' or 'i_derived4', got {channel_mode!r}")
+        if channel_mode not in ('raw2', 'i_derived4', 'iv_derived4'):
+            raise ValueError(
+                f"channel_mode must be 'raw2', 'i_derived4' or 'iv_derived4', got {channel_mode!r}")
         self.channel_mode = channel_mode
         
         # Load data
@@ -102,9 +103,17 @@ class ArcFaultDataset(Dataset):
             self.i_channel = channel_names.index('I')
         else:
             self.i_channel = self.n_channels - 1
+        # Voltage channel (the other one in the [V_ligne, I] pair) — used by the
+        # 'iv_derived4' front-end that feeds the ArcSSM voltage branch.
+        self.v_channel = (1 - self.i_channel) if self.n_channels == 2 else 0
 
         # Number of channels the 1D branch will actually receive
-        self.out_channels = 4 if self.channel_mode == 'i_derived4' else self.n_channels
+        if self.channel_mode == 'i_derived4':
+            self.out_channels = 4
+        elif self.channel_mode == 'iv_derived4':
+            self.out_channels = 8   # [i_derived4 (4) | v_derived4 (4)]
+        else:
+            self.out_channels = self.n_channels
 
         
         # Load charges (optional — may not exist for new datasets)
@@ -169,6 +178,15 @@ class ArcFaultDataset(Dataset):
             i_sig = x_raw[self.i_channel]                  # (seq_len,)
             x_1d = self._derive_i_channels(i_sig)          # (4, seq_len)
             stft_src = i_sig.unsqueeze(0)                  # (1, seq_len) — STFT of I only
+        elif self.channel_mode == 'iv_derived4':
+            # ── ArcSSM dual-branch front-end: derive 4 channels from I AND 4
+            #    from V, stacked → (8, seq_len) = [i_derived4 | v_derived4].
+            #    The model splits [:4]=current (primary), [4:8]=voltage (spectral).
+            i_sig = x_raw[self.i_channel]                  # (seq_len,)
+            v_sig = x_raw[self.v_channel]                  # (seq_len,)
+            x_1d = torch.cat([self._derive_i_channels(i_sig),
+                              self._derive_i_channels(v_sig)], dim=0)   # (8, seq_len)
+            stft_src = i_sig.unsqueeze(0)                  # (unused by ArcSSM)
         else:
             # ── V1 front-end: raw channels [V_ligne, I] ──────────────────
             x_1d = x_raw                                    # (n_channels, seq_len)

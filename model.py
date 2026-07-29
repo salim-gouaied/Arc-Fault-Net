@@ -1793,6 +1793,7 @@ def get_model(
             n_layers=kwargs.get('ssm_layers', 4),
             fas_k=kwargs.get('fas_k', 0),
             fas_channels=kwargs.get('fas_channels', (1, 2)),
+            use_voltage=kwargs.get('use_voltage', False),
         )
 
     models = {

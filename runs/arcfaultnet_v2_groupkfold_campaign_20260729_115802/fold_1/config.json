@@ -1,0 +1,17 @@
+{
+  "fold": 1,
+  "fold_name": "fold_1",
+  "model_name": "arcfaultnet_v2",
+  "group_level": "campaign",
+  "n_folds": 4,
+  "global_seed": 42,
+  "fold_seed": 42,
+  "epochs": 200,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "batch_size": 64,
+  "patience": 15,
+  "gradient_clip": 0.5,
+  "threshold": 0.5,
+  "use_pos_weight": false
+}
