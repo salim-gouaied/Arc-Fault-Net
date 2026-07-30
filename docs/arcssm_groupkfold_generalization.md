@@ -179,32 +179,75 @@ The model ranks well (AUC 0.9); the fixable part is the **decision layer**.
 - **Unsupervised calibration** (threshold from the histogram valley of *unlabelled*
   target cycles, Otsu): pooled accuracy 81.3 % → **83.0 %**, specificity 82.3 % →
   **≈85 %**, FP 1044 → 857. A modest but honest gain, achievable with no labels.
-- **Multi-cycle decision.** "Recall 90 % per cycle" is not a safety problem: an arc
-  spans many cycles, so a decision aggregated over consecutive cycles (IEC 62606
-  detects over several half-cycles) recovers a sustained arc even if 10 % of
-  individual cycles are missed.
+### 6.1 Multi-cycle decision — the one substantial win (no retraining)
+
+Averaging B1's per-cycle scores over **K consecutive cycles** (then applying the
+unsupervised per-campaign threshold) improves *every* metric at once. This is B1's
+own predictions, post-processed — no training, no new parameters.
+
+| K | Acc | **Spec** | Recall | F1 | per-campaign AUC (15j/22j/8j/2026) |
+|---|---|---|---|---|---|
+| 1 (B1 per cycle) | 82.98 % | 85.40 % | 80.1 % | 81.1 % | 0.912 / 0.908 / **0.880** / 0.996 |
+| 2 | 86.51 % | 86.58 % | 86.4 % | 85.7 % | 0.958 / 0.957 / 0.947 / 0.988 |
+| **4** | 86.83 % | 90.06 % | 83.4 % | 86.0 % | **0.990 / 0.970 / 0.977** / 0.977 |
+| **6** | **88.27 %** | 91.80 % | 84.7 % | **87.8 %** | 0.997 / 0.961 / 0.974 / 0.966 |
+| 8 | 87.39 % | **93.14 %** | 81.9 % | 87.0 % | 1.000 / 0.948 / 0.962 / 0.940 |
+
+Against the fixed-threshold B1 reference (81.28 % / 82.30 % spec), **K=6 gives
++7.0 accuracy, +9.5 specificity, +4.6 recall, +8.2 F1 simultaneously.** Averaging
+denoises the score, which is why the hardest fold improves most in ranking terms
+(8_juillet AUC 0.880 → 0.977 at K=4).
+
+**Recommended operating mode: K=4** (80 ms decision at 50 Hz, comfortably inside
+IEC 62606 timing, per-campaign AUC ≥ 0.977 everywhere), or K=6 to maximise the
+headline numbers.
+
+**Honest limitation.** 8_juillet's recall stays weak (43–67 %) because its arcs are
+**isolated single cycles** that averaging dilutes. Multi-cycle decisions favour
+**sustained** arcs (the safety-relevant case) and penalise single-cycle events; K=2
+is the best compromise for that campaign (67.2 %).
+
+**A learned multi-cycle model was also tried and is superseded by this.** An
+`ArcSSMWindow` (per-cycle S4D + mean⊕std aggregation over K=2, 367 745 params, in
+`train_window.py` — since removed in the cleanup, recoverable from git history)
+reached 80.43 % / 73.61 % spec at window
+level — *below* simply averaging B1's scores over the same two cycles (84.10 % /
+83.85 %). Its std branch fires on *any* cycle-to-cycle change, so normal load
+variation triggers false positives (15_juillet specificity 35.5 %). Notable
+exception: it reached AUC 1.000 on the 2026 bench and lifted 8_juillet's
+specificity at 95 % recall from 2.8 % to 55.9 %. The measured
+repetitivity gap that motivated it is real (arc is less repetitive than normal on
+every campaign, Δndiff +0.19…+0.50) — but exploiting it at the decision level beats
+learning it in the features. See
+[`arcssm_window_architecture.md`](arcssm_window_architecture.md).
 
 ---
 
 ## 7. Conclusion
 
-- **B1 (plain 4-layer ArcSSM) is the best model configuration reachable on this
-  dataset** for cross-campaign detection: **≈81 % at a fixed threshold, ≈83 % with
-  unsupervised per-installation calibration**, and good per-installation specificity
-  on 3 of 4 benches.
-- **The architecture/training space is exhausted** — 7 configurations, none beats
-  B1, for a well-understood reason (in-domain checkpoint selection + capacity →
-  over-fitting of the training benches).
-- **The binding constraint is data**: 3/4 campaigns share one bench, so the model
-  cannot learn bench-invariance. The single highest-value next step is **acquiring
-  more campaigns on different installations** — this outranks any further modelling.
+- **B1 (plain 4-layer ArcSSM) is the best *trained* configuration reachable on this
+  dataset** — 8 configurations tried, none beats it, for a well-understood reason
+  (in-domain checkpoint selection + capacity → over-fitting of the training benches).
+- **But B1 is not the best *system*.** The decision layer, not the network, carried
+  the real gain: **multi-cycle aggregation + unsupervised per-installation
+  calibration reaches 88.3 % accuracy / 91.8 % specificity / 84.7 % recall (K=6)**,
+  versus 81.3 % / 82.3 % / 80.1 % for B1 at a fixed per-cycle threshold — every
+  metric improved at once, with **zero retraining** (§6.1). Detecting over several
+  cycles is also what a real AFDD does (IEC 62606).
+- **What remains data-bound.** 3/4 campaigns share one IJL bench, so the *network*
+  still cannot learn bench-invariance — that is why no training-side intervention
+  helped, and why acquiring campaigns on **different installations** remains the
+  highest-value next step. It is no longer true, however, that ≈81 % is the ceiling
+  for the deployed system.
 - Keep the strengths on record: within-campaign AUC 0.88–0.996, a compact
   (359 k-param) FFT-fast model, and a voltage HF signal that is measurably
   bench-consistent (a lead worth revisiting once more diverse benches exist).
 
 **Recommended reporting statement.** *"ArcSSM discriminates arc from normal
-excellently within an installation (AUC 0.88–0.996). Cross-installation, a single
-fixed threshold is limited (≈81 %) by a per-campaign score shift; a per-installation
-operating point recovers strong specificity on 3 of 4 benches. The residual gap is
-bounded by the dataset's bench coverage (3 of 4 campaigns share one bench), not by
-the model."*
+excellently within an installation (AUC 0.88–0.996). Evaluated per cycle on an
+unseen installation, a single fixed threshold is limited to ≈81 % by a per-campaign
+score shift. Aggregating the decision over 4–6 consecutive cycles — as an AFDD does
+under IEC 62606 — together with an unsupervised per-installation threshold raises
+cross-installation performance to 88.3 % accuracy at 91.8 % specificity without
+retraining. The residual gap is bounded by the dataset's bench coverage (3 of 4
+campaigns share one bench), not by the model."*

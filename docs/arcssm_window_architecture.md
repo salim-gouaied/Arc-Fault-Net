@@ -1,9 +1,16 @@
 # ArcSSM « fenêtre » (multi-cycles) — architecture & logique, en simple
 
-> But de ce document : expliquer **simplement** la nouvelle architecture qui décide
-> sur **plusieurs cycles consécutifs** au lieu d'un seul, pourquoi elle devrait mieux
-> généraliser à un banc inédit, et comment elle est construite. Code :
-> [`train_window.py`](../train_window.py) (classe `ArcSSMWindow`).
+> ⚠️ **RÉSULTAT : cette architecture a été TESTÉE puis ÉCARTÉE.** Elle atteint
+> 80.4 % / 73.6 % de spécificité, moins bien que simplement moyenner les scores de
+> B1 sur les mêmes 2 cycles (84.1 % / 83.9 %). Sa branche écart-type se déclenche sur
+> *tout* changement, donc une variation normale de charge crée des faux positifs. Le
+> code (`train_window.py`) a été retiré au nettoyage (récupérable dans git).
+> **La méthode retenue est décrite dans [`multicycle_decision_howto.md`](multicycle_decision_howto.md).**
+>
+> Ce document reste utile pour comprendre **pourquoi** l'idée multi-cycles est bonne
+> (§2, §6 : la mesure de répétitivité est réelle et invariante au banc) — c'est elle
+> qui a mené à la solution retenue, mais appliquée au niveau *décision* et non
+> *features*.
 
 ---
 

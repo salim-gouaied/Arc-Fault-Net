@@ -84,13 +84,6 @@ class ArcSSMNet(nn.Module):
         block_dropout: float = 0.1,
         deep_classifier: bool = False,
         backbone: str = "s4d",
-        fas_k: int = 0,
-        fas_channels: tuple = (1, 2),
-        use_voltage: bool = False,
-        v_d_model: int = 96,
-        v_d_state: int = 32,
-        v_n_layers: int = 2,
-        v_embed: int = 64,
         **_ignore,   # swallow fs / n_fft / use_se / fusion_mode passed by get_model
     ):
         super().__init__()
@@ -98,20 +91,8 @@ class ArcSSMNet(nn.Module):
             raise ValueError(f"backbone must be s4d|mamba, got {backbone!r}")
         self.backbone = backbone
 
-        # ── FAS (Feature Amplification Strategy, DCAMamba 2025) ────────────
-        # Optional order-statistic front-end: per channel, keep the top-K and
-        # bottom-K values over time (2K total) and discard the rest — turning
-        # the cycle into a compact, TIME-ORDER-INVARIANT amplitude-distribution
-        # descriptor. DCAMamba applies it to a DC current (no fundamental); in
-        # AC the top/bottom of the raw 50 Hz sinusoid is just its ±peak, so we
-        # apply FAS only to the FUNDAMENTAL-SUPPRESSED channels (default |dI|
-        # and TKEO), where arc scatter — not the load sinusoid — dominates.
-        self.fas_k = int(fas_k)
-        self.fas_channels = list(fas_channels)
-        enc_in = len(self.fas_channels) if self.fas_k > 0 else in_channels
-
         self.encoder = nn.Conv1d(
-            enc_in, d_model, kernel_size=embed_kernel, padding=embed_kernel // 2
+            in_channels, d_model, kernel_size=embed_kernel, padding=embed_kernel // 2
         )
         self.enc_act = nn.GELU()
 
@@ -142,60 +123,21 @@ class ArcSSMNet(nn.Module):
 
         self.norm = nn.LayerNorm(d_model)
         self.to_embed = nn.Linear(d_model, 128)
-
-        # ── optional VOLTAGE branch (spectral, bench-invariant complement) ──
-        # v(t)'s HF arc signature is (empirically) far more CONSISTENT across
-        # benches than i(t)'s (AUC 0.70-0.79 on every campaign vs I's 0.63-0.90).
-        # A lighter S4D branch on v_derived4 adds that complementary evidence;
-        # the complex S4D resonators are exactly the spectral analyser it needs.
-        # Current stays PRIMARY; voltage assists (mainly to stabilise specificity
-        # on unseen benches). Fusion = concat of the two branch embeddings.
-        self.use_voltage = use_voltage
-        if use_voltage:
-            self.encoder_v = nn.Conv1d(4, v_d_model, kernel_size=embed_kernel,
-                                       padding=embed_kernel // 2)
-            self.enc_act_v = nn.GELU()
-            self.blocks_v = nn.ModuleList(
-                [S4Block(v_d_model, v_d_state, bidirectional, False, block_dropout)
-                 for _ in range(v_n_layers)])
-            self.norm_v = nn.LayerNorm(v_d_model)
-            self.to_embed_v = nn.Linear(v_d_model, v_embed)
-        clf_in = 128 + (v_embed if use_voltage else 0)
         self.classifier = _build_classifier(
-            clf_in, classifier_hidden, dropout, deep_classifier
+            128, classifier_hidden, dropout, deep_classifier
         )
-
-    def _apply_fas(self, x_1d: torch.Tensor) -> torch.Tensor:
-        """FAS front-end: per selected channel, concat top-K and bottom-K over
-        time → (B, len(fas_channels), 2K). Parameter-free (order statistics)."""
-        x = x_1d[:, self.fas_channels, :]                          # (B, C', M)
-        top = x.topk(self.fas_k, dim=-1, largest=True).values      # (B, C', K)
-        bot = x.topk(self.fas_k, dim=-1, largest=False).values     # (B, C', K)
-        return torch.cat([top, bot], dim=-1)                       # (B, C', 2K)
 
     def extract_embedding(
         self, x_1d: torch.Tensor, x_2d: torch.Tensor = None
     ) -> torch.Tensor:
-        """Fused embedding (128, or 128+v_embed with use_voltage). x_1d is (B,4,M)
-        for the current-only model, or (B,8,M) = [i_derived4 | v_derived4] when the
-        voltage branch is on. Also consumable by a downstream tree head."""
-        x_i = x_1d[:, :4, :] if self.use_voltage else x_1d
-        # ── current branch (primary) ──
-        xi = self._apply_fas(x_i) if self.fas_k > 0 else x_i
-        xi = self.enc_act(self.encoder(xi))
-        xi = xi.transpose(1, 2)
+        """Return the 128-d embedding (also consumable by a downstream tree head)."""
+        x = self.enc_act(self.encoder(x_1d))     # (B, H, L)
+        x = x.transpose(1, 2)                    # (B, L, H)
         for blk in self.blocks:
-            xi = blk(xi)
-        emb_i = self.to_embed(self.norm(xi).mean(dim=1))       # (B, 128)
-        if not self.use_voltage:
-            return emb_i
-        # ── voltage branch (spectral, secondary) ──
-        xv = self.enc_act_v(self.encoder_v(x_1d[:, 4:8, :]))
-        xv = xv.transpose(1, 2)
-        for blk in self.blocks_v:
-            xv = blk(xv)
-        emb_v = self.to_embed_v(self.norm_v(xv).mean(dim=1))   # (B, v_embed)
-        return torch.cat([emb_i, emb_v], dim=-1)               # (B, 128+v_embed)
+            x = blk(x)
+        x = self.norm(x)
+        x = x.mean(dim=1)                        # global average pool over time
+        return self.to_embed(x)                  # (B, 128)
 
     def forward(
         self,
@@ -228,17 +170,14 @@ if __name__ == "__main__":
         ("ArcSSM (S4D, bidir)      ", dict()),
         ("ArcSSM (S4D, causal)     ", dict(bidirectional=False)),
         ("ArcSSM (S4D selective abl)", dict(selective=True, n_layers=2)),
-        ("ArcSSM (mamba, no FAS)   ", dict(backbone="mamba", n_layers=2)),
-        ("ArcSSM (mamba + FAS K=256)", dict(backbone="mamba", n_layers=2, fas_k=256)),
-        ("ArcSSM (I+V dual branch) ", dict(use_voltage=True)),
+        ("ArcSSM (mamba backbone)  ", dict(backbone="mamba", n_layers=2)),
     ]:
         model = ArcSSMNet(**kw)
-        xin = torch.randn(B, 8, M) if kw.get("use_voltage") else x_1d
-        logits, emb = model(xin, None, return_embedding=True)
+        logits, emb = model(x_1d, None, return_embedding=True)
         n = sum(p.numel() for p in model.parameters())
         print(f"[{name}] logits {tuple(logits.shape)}  emb {tuple(emb.shape)}  "
               f"params = {n:,}")
-        assert logits.shape == (B,)
+        assert logits.shape == (B,) and emb.shape == (B, 128)
 
     ArcSSMNet()(x_1d).mean().backward()
     print("[grad] backward OK")

@@ -22,10 +22,8 @@ Features:
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-import math
-from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, GroupShuffleSplit
 try:
@@ -72,68 +70,6 @@ def set_seed(seed: int):
 #  TRAINING FUNCTIONS
 # ═══════════════════════════════════════════════════════
 
-def _coral_penalty(emb: torch.Tensor, dom: torch.Tensor) -> torch.Tensor:
-    """
-    Deep-CORAL alignment across training campaigns (Sun & Saenko 2016), extended
-    with a mean term. Pulls the per-campaign embedding distributions (1st + 2nd
-    moments) together so the 128-d embedding — hence the logit — stops sliding
-    from one campaign to the next. Zero parameters. Needs >=2 samples per domain.
-    """
-    stats = []
-    d_dim = emb.shape[1]
-    for d in torch.unique(dom):
-        e = emb[dom == d]
-        if e.shape[0] < 2:
-            continue
-        mu = e.mean(0)
-        ec = e - mu
-        cov = (ec.t() @ ec) / (e.shape[0] - 1)
-        stats.append((mu, cov))
-    if len(stats) < 2:
-        return emb.new_zeros(())
-    loss = emb.new_zeros(())
-    n = 0
-    for i in range(len(stats)):
-        for j in range(i + 1, len(stats)):
-            mu_i, cov_i = stats[i]; mu_j, cov_j = stats[j]
-            loss = loss + ((cov_i - cov_j) ** 2).sum() / (4 * d_dim * d_dim) \
-                        + ((mu_i - mu_j) ** 2).mean()
-            n += 1
-    return loss / max(n, 1)
-
-
-def _dg_step(model, x_1d, x_2d, targets, dom, dg):
-    """
-    One domain-generalization training step (0 extra params). Returns (loss, logits).
-      - GroupDRO (Sagawa 2020): weight the per-campaign losses toward the WORST
-        campaign via an online exponentiated update, instead of the plain average.
-      - CORAL: optional embedding-alignment penalty (see _coral_penalty).
-    dg['group_weights'] is a persistent dict (owned by train_model) carrying the
-    DRO weights across batches/epochs.
-    """
-    need_emb = dg['coral_weight'] > 0
-    if need_emb:
-        logits, emb = model(x_1d, x_2d, return_embedding=True)
-    else:
-        logits, emb = model(x_1d, x_2d), None
-    bce = F.binary_cross_entropy_with_logits(
-        logits, targets, reduction='none', pos_weight=dg.get('pos_weight'))
-
-    if dg['group_dro']:
-        q = dg['group_weights']
-        per = {int(d): bce[dom == d].mean() for d in torch.unique(dom)}
-        for d, Ld in per.items():                       # online DRO weight update
-            q[d] = q.get(d, 1.0) * math.exp(dg['dro_eta'] * float(Ld.detach()))
-        Z = sum(q[d] for d in per) + 1e-12
-        loss = sum((q[d] / Z) * Ld for d, Ld in per.items())
-    else:
-        loss = bce.mean()
-
-    if need_emb:
-        loss = loss + dg['coral_weight'] * _coral_penalty(emb, dom)
-    return loss, logits
-
-
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -143,8 +79,7 @@ def train_one_epoch(
     epoch: int,
     gradient_clip: float = 0.5,
     label_smoothing: float = 0.05,
-    channel_dropout: float = 0.0,
-    dg: Optional[dict] = None
+    channel_dropout: float = 0.0
 ) -> Dict[str, float]:
     """Train for one epoch with label smoothing and optional channel dropout.
 
@@ -163,7 +98,7 @@ def train_one_epoch(
     total = 0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch} [Train]", leave=False)
-    for x_1d, x_2d, labels, dom in pbar:
+    for x_1d, x_2d, labels, _ in pbar:
         x_1d   = x_1d.to(device)
         x_2d   = x_2d.to(device)
         labels = labels.to(device)
@@ -183,12 +118,8 @@ def train_one_epoch(
 
         optimizer.zero_grad()
 
-        if dg is None:
-            logits = model(x_1d, x_2d)
-            loss   = criterion(logits, smoothed_labels)
-        else:
-            loss, logits = _dg_step(model, x_1d, x_2d, smoothed_labels,
-                                     dom.to(device), dg)
+        logits = model(x_1d, x_2d)
+        loss   = criterion(logits, smoothed_labels)
 
         loss.backward()
 
@@ -234,6 +165,7 @@ def evaluate(
 
     all_preds  = []
     all_labels = []
+    all_probs  = []
 
     for x_1d, x_2d, labels, _ in tqdm(loader, desc=desc, leave=False):
         x_1d   = x_1d.to(device)
@@ -251,9 +183,11 @@ def evaluate(
 
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
+        all_probs.extend(probs.detach().cpu().numpy())
 
     all_preds  = np.array(all_preds)
     all_labels = np.array(all_labels)
+    all_probs  = np.array(all_probs)
 
     tp = np.sum((all_preds == 1) & (all_labels == 1))
     fp = np.sum((all_preds == 1) & (all_labels == 0))
@@ -264,6 +198,9 @@ def evaluate(
     recall       = tp / (tp + fn + 1e-8)
     f1           = 2 * precision * recall / (precision + recall + 1e-8)
     specificity  = tn / (tn + fp + 1e-8)
+    # Threshold-free scores — usable as an early-stopping monitor that is immune to
+    # the per-campaign operating-point drift that makes val F1 a poor selector.
+    roc_auc, pr_auc = _auc_scores(all_labels, all_probs)
 
     return {
         'loss':        total_loss / total,
@@ -272,6 +209,8 @@ def evaluate(
         'recall':      recall,
         'f1':          f1,
         'specificity': specificity,
+        'roc_auc':     roc_auc,
+        'pr_auc':      pr_auc,
         'tp': int(tp), 'fp': int(fp),
         'fn': int(fn), 'tn': int(tn)
     }
@@ -316,7 +255,7 @@ def compute_pos_weight(labels: np.ndarray, device: torch.device) -> torch.Tensor
 
 # ── Monitored-metric helper ────────────────────────────────────────────────
 _VALID_MONITORS = ('val_f1', 'val_precision', 'val_recall',
-                   'val_specificity', 'val_fbeta')
+                   'val_specificity', 'val_fbeta', 'val_pr_auc', 'val_roc_auc')
 
 def _monitor_score(val_metrics: Dict[str, float],
                    monitor: str,
@@ -344,6 +283,11 @@ def _monitor_score(val_metrics: Dict[str, float],
         r  = val_metrics['recall']
         b2 = fbeta ** 2
         return (1 + b2) * p * r / (b2 * p + r + 1e-8)
+    elif monitor in ('val_pr_auc', 'val_roc_auc'):
+        # Threshold-free. val F1 saturates at 97-99% here, so tiny fluctuations decide
+        # the checkpoint; ranking quality is the far more stable selector.
+        v = val_metrics['pr_auc' if monitor == 'val_pr_auc' else 'roc_auc']
+        return -1.0 if (v is None or np.isnan(v)) else float(v)
     else:
         raise ValueError(f"Unknown monitor metric '{monitor}'. "
                          f"Choose from: {_VALID_MONITORS}")
@@ -367,10 +311,7 @@ def train_model(
     fold_name: str = "",
     channel_dropout: float = 0.0,
     monitor: str = 'val_f1',
-    fbeta: float = 1.0,
-    group_dro: bool = False,
-    coral_weight: float = 0.0,
-    dro_eta: float = 0.05
+    fbeta: float = 1.0
 ) -> Tuple[nn.Module, Dict]:
     """
     Train model with configurable early stopping.
@@ -387,11 +328,6 @@ def train_model(
         history: Full training history dict
     """
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    # Domain-generalization state (0 extra params). dg=None => standard training.
-    dg = None
-    if group_dro or coral_weight > 0:
-        dg = {'group_dro': group_dro, 'coral_weight': float(coral_weight),
-              'dro_eta': float(dro_eta), 'group_weights': {}, 'pos_weight': pos_weight}
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     if lr_scheduler == 'warm_restarts':
         scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -421,6 +357,7 @@ def train_model(
         'train_loss': [], 'train_acc': [],
         'val_loss':   [], 'val_acc':   [],
         'val_f1':     [], 'val_precision': [], 'val_recall': [],
+        'val_pr_auc': [], 'val_roc_auc': [],
         'lr': []
     }
 
@@ -430,7 +367,7 @@ def train_model(
     for epoch in range(1, epochs + 1):
         train_metrics = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch, gradient_clip,
-            channel_dropout=channel_dropout, dg=dg
+            channel_dropout=channel_dropout
         )
         val_metrics = evaluate(
             model, val_loader, criterion, device, "Val", threshold
@@ -448,6 +385,8 @@ def train_model(
         history['val_f1'].append(val_metrics['f1'])
         history['val_precision'].append(val_metrics['precision'])
         history['val_recall'].append(val_metrics['recall'])
+        history['val_pr_auc'].append(val_metrics.get('pr_auc', float('nan')))
+        history['val_roc_auc'].append(val_metrics.get('roc_auc', float('nan')))
         history['lr'].append(current_lr)
 
         if writer:
@@ -481,6 +420,7 @@ def train_model(
                   f"val_loss={val_metrics['loss']:.4f}  "
                   f"val_acc={100*val_metrics['accuracy']:.1f}%  "
                   f"val_f1={100*val_metrics['f1']:.1f}%  "
+                  f"val_prauc={val_metrics.get('pr_auc', float('nan')):.4f}  "
                   f"lr={current_lr:.2e}")
 
         if patience_counter >= patience:
@@ -747,9 +687,6 @@ def run_single_training(
     channel_dropout: float = 0.0,
     ssm_backbone: str = 's4d',
     ssm_layers: int = 4,
-    fas_k: int = 0,
-    fas_channels: tuple = (1, 2),
-    use_voltage: bool = False,
     monitor: str = 'val_f1',
     fbeta: float = 1.0
 ) -> Dict:
@@ -808,8 +745,7 @@ def run_single_training(
                       fusion_mode=fusion_mode,
                       use_channel_attn=use_channel_attn,
                       ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
-                      fas_k=fas_k, fas_channels=fas_channels, use_voltage=use_voltage,
-                      fs=fs, n_fft=n_fft).to(device)
+                                            fs=fs, n_fft=n_fft).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
 
@@ -851,8 +787,6 @@ def run_single_training(
         'fusion_mode':    fusion_mode,
         'ssm_backbone':   ssm_backbone,
         'ssm_layers':     ssm_layers,
-        'fas_k':          fas_k,
-        'fas_channels':   list(fas_channels),
         'epochs':         epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
         'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
@@ -1260,15 +1194,8 @@ def run_groupkfold_cv(
     channel_dropout: float = 0.0,
     ssm_backbone: str = 's4d',
     ssm_layers: int = 4,
-    fas_k: int = 0,
-    fas_channels: tuple = (1, 2),
-    use_voltage: bool = False,
     monitor: str = 'val_f1',
-    fbeta: float = 1.0,
-    group_dro: bool = False,
-    coral_weight: float = 0.0,
-    dro_eta: float = 0.05,
-    dg_balanced_sampler: bool = False
+    fbeta: float = 1.0
 ) -> Dict:
     """
     Group-based cross-validation preventing data leakage.
@@ -1291,12 +1218,6 @@ def run_groupkfold_cv(
 
     data_dir = Path(dataset.data_dir)
     group_ids = load_group_ids(data_dir, len(dataset), group_level)
-    # Domain generalization needs a per-cycle campaign id. The dataset returns
-    # self.charges as the 4th batch element (dummy here), so we repurpose it to
-    # carry the integer campaign id — no dataset/interface change needed.
-    if group_dro or coral_weight > 0 or dg_balanced_sampler:
-        _c2i = {c: i for i, c in enumerate(sorted(np.unique(group_ids)))}
-        dataset.charges = np.array([_c2i[g] for g in group_ids], dtype=np.int64)
     labels = dataset.y
     indices = np.arange(len(dataset))
 
@@ -1486,21 +1407,9 @@ def run_groupkfold_cv(
             print(f"    strong augmentation ON — donor pool: "
                   f"{len(dataset._donor_pool)} normal training cycles")
 
-        # Campaign-balanced sampling (0 params): each training campaign is equally
-        # likely per batch, so no campaign dominates the gradient and the per-campaign
-        # DRO/CORAL estimates stay stable.
-        if dg_balanced_sampler:
-            _dom = dataset.charges[train_idx]
-            _w = 1.0 / np.bincount(_dom)[_dom]
-            _sampler = WeightedRandomSampler(
-                torch.as_tensor(_w, dtype=torch.double), len(train_idx), replacement=True)
-            train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
-                                      sampler=_sampler, num_workers=num_workers,
-                                      pin_memory=True, drop_last=True)
-        else:
-            train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
-                                      shuffle=True, num_workers=num_workers,
-                                      pin_memory=True, drop_last=True)
+        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size,
+                                  shuffle=True, num_workers=num_workers,
+                                  pin_memory=True, drop_last=True)
         val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size,
                                 shuffle=False, num_workers=num_workers, pin_memory=True)
         test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size,
@@ -1520,8 +1429,7 @@ def run_groupkfold_cv(
                           fusion_mode=fusion_mode,
                           use_channel_attn=use_channel_attn,
                           ssm_backbone=ssm_backbone, ssm_layers=ssm_layers,
-                          fas_k=fas_k, fas_channels=fas_channels, use_voltage=use_voltage,
-                          fs=fs, n_fft=n_fft).to(device)
+                                                    fs=fs, n_fft=n_fft).to(device)
 
         if fold_idx == 0:
             print(f"    Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -1534,8 +1442,7 @@ def run_groupkfold_cv(
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
             fold_name=fold_name, channel_dropout=channel_dropout,
-            monitor=monitor, fbeta=fbeta,
-            group_dro=group_dro, coral_weight=coral_weight, dro_eta=dro_eta
+            monitor=monitor, fbeta=fbeta
         )
 
         # ── Evaluate on held-out test groups ──
@@ -1742,17 +1649,29 @@ def run_groupkfold_cv(
         'group_level': group_level,
         'val_mode': val_mode_eff,
         'pooled_oof': pooled,
+        # ── Provenance: everything needed to reproduce / interpret this run ──
+        # fs is load-bearing: FrequencyGate slices bins via bin_res = fs/n_fft, so a
+        # wrong fs silently changes which band the spectral branch sees. It used to be
+        # unrecorded, which made an earlier run's configuration unrecoverable.
+        'fs': int(fs),
+        'n_fft': n_fft,
+        'hop_length': getattr(dataset, 'hop_length', None),
+        'channel_mode': getattr(dataset, 'channel_mode', None),
+        'data_dir': str(getattr(dataset, 'data_dir', '')),
+        'monitor': monitor,
+        'fbeta': fbeta,
+        'use_se': use_se,
+        'se_reduction': se_reduction,
+        'use_amplitude': use_amplitude,
+        'deep_classifier': deep_classifier,
+        'fusion_mode': fusion_mode,
+        'use_channel_attn': use_channel_attn,
+        'n_recordings': (int(len(np.unique(recording_ids)))
+                         if recording_ids is not None else None),
         'channel_dropout': channel_dropout,
         'strong_augment': bool(getattr(dataset, 'strong_augment', False)),
         'ssm_backbone': ssm_backbone,
         'ssm_layers': ssm_layers,
-        'fas_k': fas_k,
-        'fas_channels': list(fas_channels),
-        'use_voltage': use_voltage,
-        'group_dro': group_dro,
-        'coral_weight': coral_weight,
-        'dro_eta': dro_eta,
-        'dg_balanced_sampler': dg_balanced_sampler,
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
@@ -1873,34 +1792,6 @@ def main():
     parser.add_argument('--ssm-layers', type=int, default=4,
                         help='Number of stacked SSM blocks in the arcssm track '
                              '(DCAMamba ablation: 2 near-optimal, >4 overfits).')
-    parser.add_argument('--fas-k', type=int, default=0,
-                        help='FAS (Feature Amplification Strategy) K: per channel keep '
-                             'top-K + bottom-K values over time (2K total); 0 = off. '
-                             'Order-statistic front-end adapted from DCAMamba (DC->AC).')
-    parser.add_argument('--fas-channels', type=str, default='1,2',
-                        help='Comma-separated channel indices FAS applies to (default '
-                             '"1,2" = |dI|,TKEO, fundamental-suppressed; 0=I_norm, '
-                             '3=RMS_slide). Used only when --fas-k > 0.')
-    # ── Domain generalization (groupkfold only; 0 extra parameters) ──────────
-    parser.add_argument('--group-dro', action='store_true',
-                        help='GroupDRO (Sagawa 2020): optimise the WORST training '
-                             'campaign instead of the average. Targets cross-campaign '
-                             'generalization directly. groupkfold only.')
-    parser.add_argument('--coral-weight', type=float, default=0.0,
-                        help='Deep-CORAL penalty weight: align per-campaign embedding '
-                             'mean+covariance to reduce the per-campaign score slide. '
-                             '0=off. Try 0.1-1.0. groupkfold only.')
-    parser.add_argument('--dro-eta', type=float, default=0.05,
-                        help='GroupDRO step size for the online worst-group weighting.')
-    parser.add_argument('--dg-balanced-sampler', action='store_true',
-                        help='Sample each training campaign equally per batch '
-                             '(recommended with --group-dro / --coral-weight).')
-    parser.add_argument('--use-voltage', action='store_true',
-                        help='ArcSSM dual-branch: add a lighter S4D branch on '
-                             'v_derived4 (voltage) fused with the current branch. '
-                             "v(t)'s HF arc signature is more bench-consistent, so "
-                             'this mainly stabilises specificity on unseen campaigns. '
-                             'Switches channel-mode to iv_derived4 (8 channels).')
     # ── Early-stopping monitor ──────────────────────────────────────────────
     parser.add_argument('--monitor', type=str, default='val_f1',
                         choices=list(_VALID_MONITORS),
@@ -1921,7 +1812,6 @@ def main():
                              'missed arcs). Default: 1.0 (= F1).')
 
     args = parser.parse_args()
-    fas_channels = tuple(int(c) for c in str(args.fas_channels).split(',') if c.strip())
 
     set_seed(args.seed)
 
@@ -1937,12 +1827,8 @@ def main():
 
     # Resolve channel mode (V2 and the SSM track use the 4 I-derived channels)
     if args.channel_mode == 'auto':
-        if args.model in ('arcssm', 'arcssm_selective') and args.use_voltage:
-            channel_mode = 'iv_derived4'          # dual-branch: I + V derived channels
-        elif args.model in ('arcfaultnet_v2', 'arcssm', 'arcssm_selective'):
-            channel_mode = 'i_derived4'
-        else:
-            channel_mode = 'raw2'
+        channel_mode = 'i_derived4' if args.model in (
+            'arcfaultnet_v2', 'arcssm', 'arcssm_selective') else 'raw2'
     else:
         channel_mode = args.channel_mode
 
@@ -2044,15 +1930,8 @@ def main():
             channel_dropout=args.channel_dropout,
             ssm_backbone=args.ssm_backbone,
             ssm_layers=args.ssm_layers,
-            fas_k=args.fas_k,
-            fas_channels=fas_channels,
-            use_voltage=args.use_voltage,
             monitor=args.monitor,
             fbeta=args.fbeta,
-            group_dro=args.group_dro,
-            coral_weight=args.coral_weight,
-            dro_eta=args.dro_eta,
-            dg_balanced_sampler=args.dg_balanced_sampler
         )
     else:
         run_single_training(
@@ -2082,9 +1961,6 @@ def main():
             channel_dropout=args.channel_dropout,
             ssm_backbone=args.ssm_backbone,
             ssm_layers=args.ssm_layers,
-            fas_k=args.fas_k,
-            fas_channels=fas_channels,
-            use_voltage=args.use_voltage,
             monitor=args.monitor,
             fbeta=args.fbeta
         )
