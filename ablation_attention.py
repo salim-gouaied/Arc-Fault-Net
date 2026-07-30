@@ -196,21 +196,37 @@ def make_head(C=128, hidden=64, deep=True, dropout=0.3):
 
 
 class AblationNet(nn.Module):
-    """Dual-branch detector with switchable attention mechanisms."""
+    """Dual-branch detector with switchable attention mechanisms, descriptor bank
+    and spectral branch. Every study variant differs from `full` by one switch."""
 
     def __init__(self, cross_attention=True, freq_gate=True, channel_attn=True,
+                 descriptors=True, spectral=True,
                  deep_classifier=True, in_ch=4, spec_ch=1, C=128, out_dim=64, band=(3, 65)):
         super().__init__()
-        self.temporal = TemporalBranch(in_ch=in_ch, out_dim=out_dim, channel_attn=channel_attn)
-        self.spectral = SpectralBranch(in_ch=spec_ch, out_dim=out_dim,
-                                       freq_gate=freq_gate, band=band)
-        self.fuse = SequentialCrossAttention(C) if cross_attention else ConcatFusion(C)
+        self.descriptors = descriptors
+        self.use_spectral = spectral
+        # descriptors=False -> feed the RMS-normalised current alone, dropping
+        # [|dI|, TKEO, RMS_slide]. Same normalisation, one input channel.
+        self.temporal = TemporalBranch(in_ch=in_ch if descriptors else 1,
+                                       out_dim=out_dim, channel_attn=channel_attn)
+        if spectral:
+            self.spectral = SpectralBranch(in_ch=spec_ch, out_dim=out_dim,
+                                           freq_gate=freq_gate, band=band)
+            self.fuse = SequentialCrossAttention(C) if cross_attention else ConcatFusion(C)
+        else:
+            self.spectral = None
+            self.fuse = None
         self.classifier = make_head(C, deep=deep_classifier)
 
     def forward(self, x_1d, x_2d, return_embedding=False):
+        if not self.descriptors:
+            x_1d = x_1d[:, :1]                   # keep channel 0 = normalised I only
         f_t = self.temporal(x_1d)                # (B, C, T)
-        f_s = self.spectral(x_2d)                # (B, C, T)
-        z = self.fuse(f_t, f_s)                  # (B, C)
+        if self.use_spectral:
+            f_s = self.spectral(x_2d)            # (B, C, T)
+            z = self.fuse(f_t, f_s)              # (B, C)
+        else:
+            z = f_t.mean(-1)                     # GAP straight into the head
         logits = self.classifier(z).squeeze(-1)
         return (logits, z) if return_embedding else logits
 
@@ -219,19 +235,28 @@ class AblationNet(nn.Module):
 #  Variant registry
 # ═══════════════════════════════════════════════════════════════════════
 
+_D = dict(cross_attention=True, freq_gate=True, channel_attn=True,
+          descriptors=True, spectral=True)
+
 VARIANTS = {
-    'full':        dict(cross_attention=True,  freq_gate=True,  channel_attn=True),
-    'no_xattn':    dict(cross_attention=False, freq_gate=True,  channel_attn=True),
-    'no_freqgate': dict(cross_attention=True,  freq_gate=False, channel_attn=True),
-    'no_dca':      dict(cross_attention=True,  freq_gate=True,  channel_attn=False),
-    'none':        dict(cross_attention=False, freq_gate=False, channel_attn=False),
+    'full':           {**_D},
+    'no_xattn':       {**_D, 'cross_attention': False},
+    'no_freqgate':    {**_D, 'freq_gate': False},
+    'no_dca':         {**_D, 'channel_attn': False},
+    'none':           {**_D, 'cross_attention': False, 'freq_gate': False,
+                             'channel_attn': False},
+    # Front-end / branch ablations
+    'no_descriptors': {**_D, 'descriptors': False},
+    'temporal_only':  {**_D, 'spectral': False},
 }
 VARIANT_LABEL = {
-    'full': 'Full (all attention)',
+    'full': 'Full (all mechanisms)',
     'no_xattn': '– Cross-attn (concat)',
     'no_freqgate': '– Freq gate (fixed band)',
     'no_dca': '– Descriptor chan. attn',
     'none': 'None (no attention)',
+    'no_descriptors': '– Descriptor bank (raw I only)',
+    'temporal_only': '– Spectral branch (temporal only)',
 }
 
 
@@ -251,9 +276,28 @@ def band_bins(low_khz=2.0, fs=102_400.0, n_fft=128):
 #  Train / evaluate
 # ═══════════════════════════════════════════════════════════════════════
 
-def set_seed(seed):
+def set_seed(seed, deterministic=False):
     random.seed(seed); np.random.seed(seed)
     torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        # Removes the run-to-run spread observed when re-training the same seed.
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+def _fbeta(precision, recall, beta):
+    b2 = beta ** 2
+    return (1 + b2) * precision * recall / (b2 * precision + recall + 1e-8)
+
+
+def monitor_score(m, monitor='val_fbeta', fbeta=0.5):
+    """Model-selection score, matching train.py::_monitor_score."""
+    if monitor == 'val_f1':
+        return m['f1']
+    if monitor == 'val_fbeta':
+        return _fbeta(m['precision'], m['recall'], fbeta)
+    raise ValueError(f"unknown monitor {monitor!r}")
 
 
 @torch.no_grad()
@@ -277,9 +321,10 @@ def evaluate(model, loader, device, threshold=0.5):
                 specificity=spec, f1=f1, tp=tp, tn=tn, fp=fp, fn=fn)
 
 
-def train_variant(name, dataset, seed, device, band, epochs=80, patience=10,
-                  batch_size=64, lr=3e-4, wd=5e-4, grad_clip=0.5, label_smoothing=0.05):
-    set_seed(seed)
+def train_variant(name, dataset, seed, device, band, epochs=60, patience=30,
+                  batch_size=64, lr=3e-4, wd=5e-4, grad_clip=0.5, label_smoothing=0.05,
+                  monitor='val_fbeta', fbeta=0.5, augment=True, deterministic=False):
+    set_seed(seed, deterministic)
     n = len(dataset)
     idx = np.random.permutation(n)
     ntr, nva = int(n * 0.7), int(n * 0.15)
@@ -294,8 +339,11 @@ def train_variant(name, dataset, seed, device, band, epochs=80, patience=10,
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=10, T_mult=2)
 
-    best_f1, best_state, wait, best_ep = -1.0, None, 0, 0
+    best_score, best_state, wait, best_ep = -1.0, None, 0, 0
     for ep in range(1, epochs + 1):
+        # Augmentation is a property of the shared dataset: on for training,
+        # off for every evaluation pass (mirrors train.py).
+        dataset.training = augment
         model.train()
         for x1, x2, y, _ in tr_l:
             x1, x2, y = x1.to(device), x2.to(device), y.float().to(device)
@@ -306,9 +354,11 @@ def train_variant(name, dataset, seed, device, band, epochs=80, patience=10,
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             opt.step()
         sched.step(ep)
+        dataset.training = False
         vm = evaluate(model, va_l, device)
-        if vm['f1'] > best_f1:
-            best_f1, best_ep = vm['f1'], ep
+        score = monitor_score(vm, monitor, fbeta)
+        if score > best_score:
+            best_score, best_ep = score, ep
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             wait = 0
         else:
@@ -316,8 +366,11 @@ def train_variant(name, dataset, seed, device, band, epochs=80, patience=10,
             if wait >= patience:
                 break
     model.load_state_dict(best_state)
+    dataset.training = False
     tm = evaluate(model, te_l, device)
-    tm.update(variant=name, seed=int(seed), n_params=int(n_params), best_epoch=int(best_ep))
+    tm.update(variant=name, seed=int(seed), n_params=int(n_params), best_epoch=int(best_ep),
+              monitor=monitor, fbeta=float(fbeta), augment=bool(augment),
+              best_monitor_val=float(best_score))
     return tm
 
 
@@ -425,12 +478,23 @@ def main():
     ap.add_argument('--variant', default='none', choices=list(VARIANTS))
     ap.add_argument('--variants', nargs='+', default=list(VARIANTS))
     ap.add_argument('--seeds', nargs='+', type=int, default=[42, 2, 3, 4, 5])
+    ap.add_argument('--monitor', choices=['val_fbeta', 'val_f1'], default='val_fbeta',
+                    help='model-selection metric (paper protocol: val_fbeta)')
+    ap.add_argument('--fbeta', type=float, default=0.5,
+                    help='beta for F-beta selection (paper protocol: 0.5)')
+    ap.add_argument('--no-augment', action='store_true',
+                    help='disable the training-time augmentation used by train.py')
+    ap.add_argument('--deterministic', action='store_true',
+                    help='cuDNN-deterministic kernels; removes run-to-run spread')
     ap.add_argument('--data-dir', default='combined_dataset_2048')
     ap.add_argument('--n-fft', type=int, default=128)
     ap.add_argument('--hop-length', type=int, default=64)
     ap.add_argument('--band-low-khz', type=float, default=2.0)
-    ap.add_argument('--epochs', type=int, default=80)
-    ap.add_argument('--patience', type=int, default=10)
+    ap.add_argument('--epochs', type=int, default=60)
+    # 30 is the smallest patience that reproduces the no-early-stop checkpoint on
+    # all 5 reference seeds: with T_0=10/T_mult=2 the third cosine cycle spans
+    # epochs 31-70, so a shorter patience truncates it and selects from cycle 2.
+    ap.add_argument('--patience', type=int, default=30)
     ap.add_argument('--out-dir', default='ablation_attention_results')
     args = ap.parse_args()
 
@@ -471,7 +535,11 @@ def main():
     for v in args.variants:
         for s in args.seeds:
             t0 = time.time()
-            m = train_variant(v, ds, s, device, band, epochs=args.epochs, patience=args.patience)
+            m = train_variant(v, ds, s, device, band,
+                              epochs=args.epochs, patience=args.patience,
+                              monitor=args.monitor, fbeta=args.fbeta,
+                              augment=not args.no_augment,
+                              deterministic=args.deterministic)
             m['seconds'] = round(time.time() - t0, 1)
             rows.append(m)
             json.dump(rows, open(res_path, 'w'), indent=2)

@@ -97,3 +97,6 @@ tensorboard_logs/
 
 combined_dataset_2048/**/*.npy
 combined_dataset_2048/**/*.csv
+
+mdpi/
+presentation_suivi/

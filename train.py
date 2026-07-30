@@ -356,6 +356,7 @@ def train_model(
     device: torch.device,
     epochs: int = 80,
     lr: float = 3e-4,
+    lr_scheduler: str = 'warm_restarts',
     weight_decay: float = 5e-4,
     patience: int = 10,
     gradient_clip: float = 0.5,
@@ -377,6 +378,9 @@ def train_model(
     monitor: metric to track — 'val_f1' | 'val_precision' | 'val_recall' |
              'val_specificity' | 'val_fbeta'.
     fbeta:   β for F-beta score (only when monitor='val_fbeta').
+    lr_scheduler: 'warm_restarts' retains the historical cosine-restart
+        schedule. 'cosine' performs one uninterrupted cosine decay over the
+        requested number of epochs, without raising the learning rate again.
 
     Returns:
         model:   Best checkpoint reloaded
@@ -389,9 +393,22 @@ def train_model(
         dg = {'group_dro': group_dro, 'coral_weight': float(coral_weight),
               'dro_eta': float(dro_eta), 'group_weights': {}, 'pos_weight': pos_weight}
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=10, T_mult=2
-    )
+    if lr_scheduler == 'warm_restarts':
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=10, T_mult=2
+        )
+    elif lr_scheduler == 'cosine':
+        # Decays from `lr` to 0 once over the complete training run.  This is
+        # intentionally not restarted, so late epochs cannot receive a large
+        # learning-rate jump.
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max(1, epochs), eta_min=0.0
+        )
+    else:
+        raise ValueError("Unknown lr_scheduler "
+                         f"{lr_scheduler!r}; choose 'warm_restarts' or 'cosine'.")
+
+    print(f"  LR scheduler: {lr_scheduler}")
 
     if monitor not in _VALID_MONITORS:
         raise ValueError(f"Unknown monitor '{monitor}'. Choose from: {_VALID_MONITORS}")
@@ -420,7 +437,9 @@ def train_model(
         )
 
         current_lr = optimizer.param_groups[0]['lr']
-        scheduler.step(epoch)
+        # Step after the optimizer updates.  Both schedules therefore set the
+        # learning rate to be used by the *next* epoch.
+        scheduler.step()
 
         history['train_loss'].append(train_metrics['loss'])
         history['train_acc'].append(train_metrics['accuracy'])
@@ -500,6 +519,7 @@ def run_leave_one_charge_out_cv(
     device: torch.device,
     epochs: int = 80,
     lr: float = 3e-4,
+    lr_scheduler: str = 'warm_restarts',
     weight_decay: float = 5e-4,
     batch_size: int = 64,
     patience: int = 10,
@@ -581,7 +601,7 @@ def run_leave_one_charge_out_cv(
 
         model, history = train_model(
             model, train_loader, val_loader, device,
-            epochs=epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, lr_scheduler=lr_scheduler, weight_decay=weight_decay,
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=run_dir, writer=writer,
@@ -628,7 +648,8 @@ def run_leave_one_charge_out_cv(
             'fold_idx': fold_idx, 'charge_name': charge_name,
             'model_name': model_name, 'fold_seed': fold_seed,
             'n_params': n_params,
-            'epochs': epochs, 'lr': lr, 'weight_decay': weight_decay,
+            'epochs': epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
+            'weight_decay': weight_decay,
             'batch_size': batch_size, 'patience': patience,
             'gradient_clip': gradient_clip, 'threshold': threshold,
             'use_pos_weight': use_pos_weight,
@@ -671,7 +692,8 @@ def run_leave_one_charge_out_cv(
         'use_amplitude':  use_amplitude,
         'deep_classifier': deep_classifier,
         'fusion_mode':    fusion_mode,
-        'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
+        'epochs':         epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
+        'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
         'use_pos_weight': use_pos_weight,
@@ -704,6 +726,7 @@ def run_single_training(
     val_ratio: float = 0.15,
     epochs: int = 80,
     lr: float = 3e-4,
+    lr_scheduler: str = 'warm_restarts',
     weight_decay: float = 5e-4,
     batch_size: int = 64,
     patience: int = 10,
@@ -792,7 +815,7 @@ def run_single_training(
 
     model, history = train_model(
         model, train_loader, val_loader, device,
-        epochs=epochs, lr=lr, weight_decay=weight_decay,
+        epochs=epochs, lr=lr, lr_scheduler=lr_scheduler, weight_decay=weight_decay,
         patience=patience, gradient_clip=gradient_clip,
         threshold=threshold, pos_weight=pw,
         checkpoint_dir=run_dir, writer=writer,
@@ -830,7 +853,8 @@ def run_single_training(
         'ssm_layers':     ssm_layers,
         'fas_k':          fas_k,
         'fas_channels':   list(fas_channels),
-        'epochs':         epochs, 'lr': lr, 'weight_decay': weight_decay,
+        'epochs':         epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
+        'weight_decay': weight_decay,
         'batch_size':     batch_size, 'patience': patience,
         'gradient_clip':  gradient_clip, 'threshold': threshold,
         'best_epoch':     history['best_epoch'],
@@ -861,6 +885,7 @@ def run_kfold_cv(
     n_folds: int = 5,
     epochs: int = 80,
     lr: float = 3e-4,
+    lr_scheduler: str = 'warm_restarts',
     weight_decay: float = 5e-4,
     batch_size: int = 64,
     patience: int = 10,
@@ -949,7 +974,7 @@ def run_kfold_cv(
 
         model, history = train_model(
             model, train_loader, val_loader, device,
-            epochs=epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, lr_scheduler=lr_scheduler, weight_decay=weight_decay,
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
@@ -998,6 +1023,7 @@ def run_kfold_cv(
         'seed':        seed,
         'epochs':      epochs,
         'lr':          lr,
+        'lr_scheduler': lr_scheduler,
         'weight_decay': weight_decay,
         'batch_size':  batch_size,
         'patience':    patience,
@@ -1213,6 +1239,7 @@ def run_groupkfold_cv(
     n_folds: int = 5,
     epochs: int = 80,
     lr: float = 3e-4,
+    lr_scheduler: str = 'warm_restarts',
     weight_decay: float = 5e-4,
     batch_size: int = 64,
     patience: int = 10,
@@ -1502,7 +1529,7 @@ def run_groupkfold_cv(
         # ── Train ──
         model, history = train_model(
             model, train_loader, val_loader, device,
-            epochs=epochs, lr=lr, weight_decay=weight_decay,
+            epochs=epochs, lr=lr, lr_scheduler=lr_scheduler, weight_decay=weight_decay,
             patience=patience, gradient_clip=gradient_clip,
             threshold=threshold, pos_weight=pw,
             checkpoint_dir=fold_dir, writer=writer,
@@ -1595,7 +1622,8 @@ def run_groupkfold_cv(
             'model_name': model_name, 'group_level': group_level,
             'n_folds': n_actual_folds, 'global_seed': seed,
             'fold_seed': fold_seed,
-            'epochs': epochs, 'lr': lr, 'weight_decay': weight_decay,
+            'epochs': epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
+            'weight_decay': weight_decay,
             'batch_size': batch_size, 'patience': patience,
             'gradient_clip': gradient_clip, 'threshold': threshold,
             'use_pos_weight': use_pos_weight,
@@ -1728,7 +1756,8 @@ def run_groupkfold_cv(
         'n_folds': n_actual_folds,
         'seed': seed,
         'timestamp': timestamp,
-        'epochs': epochs, 'lr': lr, 'weight_decay': weight_decay,
+        'epochs': epochs, 'lr': lr, 'lr_scheduler': lr_scheduler,
+        'weight_decay': weight_decay,
         'batch_size': batch_size, 'patience': patience,
         'gradient_clip': gradient_clip, 'threshold': threshold,
         'use_pos_weight': use_pos_weight,
@@ -1783,6 +1812,11 @@ def main():
                              'random = cycle-level, leaky, smoke tests only.')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--lr-scheduler', type=str, default='warm_restarts',
+                        choices=['warm_restarts', 'cosine'],
+                        help='Learning-rate schedule: warm_restarts = the previous '
+                             'cosine schedule with restarts; cosine = one smooth '
+                             'cosine decay over --epochs, with no LR jumps.')
     parser.add_argument('--weight-decay', type=float, default=5e-4)
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--patience', type=int, default=10)
@@ -1930,6 +1964,7 @@ def main():
             device=device,
             epochs=args.epochs,
             lr=args.lr,
+            lr_scheduler=args.lr_scheduler,
             weight_decay=args.weight_decay,
             batch_size=args.batch_size,
             patience=args.patience,
@@ -1957,6 +1992,7 @@ def main():
             n_folds=args.n_folds,
             epochs=args.epochs,
             lr=args.lr,
+            lr_scheduler=args.lr_scheduler,
             weight_decay=args.weight_decay,
             batch_size=args.batch_size,
             patience=args.patience,
@@ -1987,6 +2023,7 @@ def main():
             n_folds=args.n_folds,
             epochs=args.epochs,
             lr=args.lr,
+            lr_scheduler=args.lr_scheduler,
             weight_decay=args.weight_decay,
             batch_size=args.batch_size,
             patience=args.patience,
@@ -2024,6 +2061,7 @@ def main():
             device=device,
             epochs=args.epochs,
             lr=args.lr,
+            lr_scheduler=args.lr_scheduler,
             weight_decay=args.weight_decay,
             batch_size=args.batch_size,
             patience=args.patience,
