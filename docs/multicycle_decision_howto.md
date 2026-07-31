@@ -25,6 +25,20 @@ ci-dessous. Tout reste récupérable dans l'historique git si besoin de le citer
 
 ## 2. Ce qui a changé : deux étapes après le modèle
 
+```mermaid
+flowchart LR
+    IN["cycles i(t)"]:::in --> M["ArcSSM B1<br/>INCHANGÉ"]:::keep
+    M --> S["1 note / cycle<br/>bruitée + décalée"]:::mid
+    S --> E1["ÉTAPE 1<br/>moyenne sur K cycles"]:::new
+    E1 --> E2["ÉTAPE 2<br/>seuil par installation<br/>(sans étiquettes)"]:::new
+    E2 --> OUT(["arc / normal"]):::out
+    classDef in fill:#f1f3f4,stroke:#5f6368,color:#202124;
+    classDef keep fill:#e8f0fe,stroke:#4285f4,color:#174ea6;
+    classDef mid fill:#fef7e0,stroke:#f9ab00,color:#b06000;
+    classDef new fill:#e6f4ea,stroke:#34a853,color:#0d652d;
+    classDef out fill:#d7f0db,stroke:#137333,color:#0d652d;
+```
+
 ### Étape 1 — décider sur plusieurs cycles (au lieu d'un seul)
 
 Le modèle donne une **note de 0 à 1 par cycle**. Cette note est **bruitée** : un
@@ -45,11 +59,25 @@ un instant isolé.
 Par convention : « arc si note > 0.5 ». Le problème diagnostiqué est que sur une
 installation jamais vue, **toutes les notes glissent ensemble** :
 
-- sur un banc, les notes sont globalement basses → 0.5 rate les arcs ;
-- sur un autre, globalement hautes → 0.5 déclenche sur du normal.
+- sur une installation, les notes sont globalement basses → 0.5 rate les arcs ;
+- sur une autre, globalement hautes → 0.5 déclenche sur du normal.
 
 Le **classement** reste bon (les arcs ont toujours des notes plus hautes que les
 normaux : AUC 0.88–0.997) — c'est le **niveau absolu** qui bouge.
+
+```mermaid
+flowchart TD
+    S["Note du modèle, 0 → 1"]:::n
+    S --> A["Installation A : notes BASSES<br/>normaux ≈0.05 · arcs ≈0.50"]:::n
+    S --> B["Installation B : notes HAUTES<br/>normaux ≈0.45 · arcs ≈0.97"]:::n
+    A --> A2["0.5 rate les arcs<br/>SOUS-DÉTECTION"]:::bad
+    B --> B2["0.5 flague les normaux<br/>SUR-DÉTECTION"]:::bad
+    A --> A3["seuil dans le creux<br/>→ correct"]:::ok
+    B --> B3["seuil dans le creux<br/>→ correct"]:::ok
+    classDef n fill:#f1f3f4,stroke:#5f6368,color:#202124;
+    classDef bad fill:#fce8e6,stroke:#ea4335,color:#a50e0e;
+    classDef ok fill:#e6f4ea,stroke:#34a853,color:#0d652d;
+```
 
 La correction : regarder **l'histogramme des notes de cette installation**. Il y a
 deux paquets (normaux en bas, arcs en haut) ; on place le seuil **dans le creux
@@ -144,8 +172,8 @@ qui n'est pas au niveau cycle.
    comparaison à l'identique avec le chiffre par cycle.
 5. **La calibration exige des données non étiquetées de l'installation cible.** C'est
    réaliste (commissioning), mais ce n'est pas « zéro configuration ».
-6. **Le réseau reste borné par les données** : 3 campagnes sur 4 viennent du même banc
-   IJL, donc il ne peut toujours pas apprendre l'invariance au banc. C'est pour ça que
+6. **Le réseau reste borné par les données** : 3 campagnes sur 4 viennent du même montage
+   IJL, donc il ne peut toujours pas apprendre l'invariance à l'installation. C'est pour ça que
    toutes les interventions côté entraînement ont échoué. Acquérir des campagnes sur
    **d'autres installations** reste le levier le plus utile pour le modèle lui-même.
 

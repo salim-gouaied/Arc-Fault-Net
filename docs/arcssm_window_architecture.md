@@ -8,7 +8,7 @@
 > **La méthode retenue est décrite dans [`multicycle_decision_howto.md`](multicycle_decision_howto.md).**
 >
 > Ce document reste utile pour comprendre **pourquoi** l'idée multi-cycles est bonne
-> (§2, §6 : la mesure de répétitivité est réelle et invariante au banc) — c'est elle
+> (§2, §6 : la mesure de répétitivité est réelle et invariante à l'installation) — c'est elle
 > qui a mené à la solution retenue, mais appliquée au niveau *décision* et non
 > *features*.
 
@@ -17,14 +17,14 @@
 ## 1. Le problème de départ (en une phrase)
 
 Le modèle B1 regarde **un seul cycle** et le juge par sa **forme**. Or la forme d'un
-cycle *normal* dépend du banc (type de charge, bruit, harmoniques). Sur un banc
-**jamais vu**, un cycle normal a une forme *inhabituelle* → le modèle crie « arc »
+cycle *normal* dépend de l'installation (type de charge, bruit, harmoniques). Sur une installation
+**jamais vue**, un cycle normal a une forme *inhabituelle* → le modèle crie « arc »
 à tort → **faux positifs**, donc **spécificité basse**.
 
 ## 2. L'idée nouvelle (en une phrase)
 
-Au lieu de « à quoi ressemble ce cycle ? » (dépend du banc), on pose une question
-qui marche sur **tous les bancs** :
+Au lieu de « à quoi ressemble ce cycle ? » (dépend de l'installation), on pose une question
+qui marche sur **toutes les installations** :
 
 > **« Est-ce que ça se répète d'un cycle à l'autre ? »**
 
@@ -32,8 +32,8 @@ qui marche sur **tous les bancs** :
 - Un **arc** est **erratique** : il change d'un cycle à l'autre (ré-allumages aléatoires,
   bruit haute-fréquence qui n'est jamais deux fois pareil).
 
-« Se répète ou pas » est **la même question quel que soit le banc** → c'est un signal
-**invariant au banc**, exactement ce qui manquait.
+« Se répète ou pas » est **la même question quelle que soit l'installation** → c'est un signal
+**invariant à l'installation**, exactement ce qui manquait.
 
 ```mermaid
 flowchart LR
@@ -61,7 +61,7 @@ flowchart LR
    - **la MOYENNE** des résumés → *« de quel type de signal s'agit-il ? »* (la partie
      « est-ce un contenu type-arc », comme B1) ;
    - **l'ÉCART-TYPE** des résumés → *« à quel point ça change d'un cycle à l'autre ? »*
-     (**la répétitivité** — le nouveau signal invariant au banc).
+     (**la répétitivité** — le nouveau signal invariant à l'installation).
 4. Un petit **classifieur** décide **arc / normal** à partir de ces deux informations.
 
 ```mermaid
@@ -119,7 +119,7 @@ On a mesuré, sur le contenu haute-fréquence (`|dI|`), à quel point deux cycle
 
 → **Sur les 4 campagnes**, l'arc est **moins répétitif** que le normal (Δ toujours
 positif, y compris sur les folds difficiles). C'est **exactement** le signal que
-l'écart-type de l'architecture va capter, et il est **présent partout** (invariant au banc).
+l'écart-type de l'architecture va capter, et il est **présent partout** (invariant à l'installation).
 
 ## 7. B1 (avant) vs Fenêtre (nouveau)
 
@@ -138,7 +138,7 @@ flowchart LR
 | | B1 (par cycle) | Fenêtre (K cycles) |
 |---|---|---|
 | Entrée | 1 cycle | K cycles consécutifs |
-| Question posée | « quelle forme ? » (dépend du banc) | « ça se répète ? » (invariant banc) + « type arc ? » |
+| Question posée | « quelle forme ? » (dépend de l'installation) | « ça se répète ? » (invariant installation) + « type arc ? » |
 | Unité de décision | 1 cycle | 1 fenêtre (≈ IEC 62606, plusieurs demi-cycles) |
 | Extracteur S4D | — | **identique** |
 | Paramètres | 359 553 | 367 745 (+8 k) |
@@ -146,12 +146,12 @@ flowchart LR
 ## 8. Honnêteté (attentes)
 
 - Le signal de non-répétitivité est **modéré** (Δ ≈ 0.2–0.3) → viser une **amélioration
-  réelle de la spécificité** sur banc inédit, **pas** un bond à 98 %.
+  réelle de la spécificité** sur une installation inédite, **pas** un bond à 98 %.
 - L'**unité de décision devient la fenêtre** (pas le cycle) — plus proche d'un vrai
   AFDD, mais les chiffres ne se comparent pas *au cycle près* avec B1.
-- Le **plafond reste borné par les données** (3 campagnes/4 = même banc IJL). Cette
-  architecture attaque la *bonne* cause (le style spécifique au banc), mais elle ne
-  fabrique pas de la diversité de bancs.
+- Le **plafond reste borné par les données** (3 campagnes/4 = même montage IJL). Cette
+  architecture attaque la *bonne* cause (le style propre à l'installation), mais elle ne
+  fabrique pas de la diversité des installations.
 
 ## 9. Protocole d'évaluation
 

@@ -95,6 +95,18 @@ So the gap is **calibration / score-shift** (a movable threshold) layered on top
 **genuine representation overlap** (features that partly encode bench style, not
 just arc physics).
 
+```mermaid
+flowchart TD
+    S["Model score, 0 → 1<br/>ranking is fine everywhere (AUC 0.88–0.996)"]:::ok
+    S --> A["Campaign A — scores sit LOW<br/>normal ≈0.05 · arc ≈0.50"]:::n
+    S --> B["Campaign B — scores sit HIGH<br/>normal ≈0.45 · arc ≈0.97"]:::n
+    A --> A2["fixed 0.5 → misses arcs<br/>UNDER-DETECTION"]:::bad
+    B --> B2["fixed 0.5 → flags normals<br/>OVER-DETECTION"]:::bad
+    classDef ok fill:#e6f4ea,stroke:#34a853,color:#0d652d;
+    classDef n fill:#f1f3f4,stroke:#5f6368,color:#202124;
+    classDef bad fill:#fce8e6,stroke:#ea4335,color:#a50e0e;
+```
+
 ---
 
 ## 4. What was tried — 7 configurations, none beats B1
@@ -124,6 +136,16 @@ Notes on the most instructive ones:
   GroupDRO/CORAL align the *training* campaigns — but 3 of them are the same IJL
   bench, so alignment **over-specializes to IJL** and transfers *worse* to the one
   genuinely different bench. **You cannot learn bench-invariance from a single bench.**
+
+  ```mermaid
+  flowchart TD
+      TR["Training campaigns of fold 2026:<br/>8 juil + 15 juil + 22 juil<br/>ALL THE SAME IJL BENCH"]:::ijl
+      TR -->|"GroupDRO/CORAL align them"| SP["the learned invariance is<br/>over-specialisation TO THE IJL BENCH"]:::warn
+      SP -->|"transfers WORSE"| T["2026 — genuinely different bench<br/>87.6 % → 68.2 %"]:::bad
+      classDef ijl fill:#e8f0fe,stroke:#4285f4,color:#174ea6;
+      classDef warn fill:#fef7e0,stroke:#f9ab00,color:#b06000;
+      classDef bad fill:#fce8e6,stroke:#ea4335,color:#a50e0e;
+  ```
 - **Voltage branch:** v(t)'s HF arc signature is empirically the most
   *bench-consistent* raw feature (AUC 0.70–0.79 on every campaign vs I's 0.63–0.90),
   yet a learned V-branch *lowered* specificity (more over-detection). The consistency
